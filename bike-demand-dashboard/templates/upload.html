@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row g-3">
+    <div class="col-12 col-lg-5">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Upload dataset</div>
+          <form id="uploadForm">
+            <div class="mb-3">
+              <label class="form-label">CSV or Excel file</label>
+              <input type="file" class="form-control" id="datasetFile" accept=".csv,.xlsx,.xls" required>
+              <div class="form-text">Max 50MB. Supported: .csv, .xlsx, .xls</div>
+            </div>
+            <button class="btn btn-primary w-100" type="submit"><i class="bi bi-cloud-arrow-up"></i> Upload</button>
+          </form>
+          <hr class="my-3">
+          <div class="h6 mb-2">Select target column</div>
+          <div class="mb-2 text-muted small">After upload, choose the numeric column you want to predict.</div>
+          <div class="d-flex gap-2">
+            <select class="form-select" id="targetSelect" disabled></select>
+            <button class="btn btn-outline-primary" id="saveTargetBtn" disabled>Save</button>
+          </div>
+          <div class="small text-muted mt-2">Next: <a href="/preprocess">Data Preprocessing</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <div class="row g-3">
+        <div class="col-12">
+          <div class="card card-soft">
+            <div class="card-body">
+              <div class="h6 mb-2">Dataset summary</div>
+              <div class="row g-2 small">
+                <div class="col-6"><span class="text-muted">Rows:</span> <span id="sumRows">—</span></div>
+                <div class="col-6"><span class="text-muted">Columns:</span> <span id="sumCols">—</span></div>
+                <div class="col-6"><span class="text-muted">Missing values:</span> <span id="sumMissing">—</span></div>
+                <div class="col-6"><span class="text-muted">Numeric columns:</span> <span id="sumNumeric">—</span></div>
+              </div>
+              <div class="mt-2 small text-muted" id="sumFilename"></div>
+              <hr class="my-3">
+              <div class="h6 mb-2">Auto-cleaning report</div>
+              <div id="cleaningReport" class="small text-muted">Upload a dataset to see what was cleaned.</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="card card-soft">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="h6 mb-0">Dataset history</div>
+                <span class="small text-muted">Current vs previous</span>
+              </div>
+              <div id="datasetHistory" class="text-muted small">Loading…</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="card card-soft">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="h6 mb-0">Preview (first rows)</div>
+                <span class="badge badge-soft" id="previewInfo"></span>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle" id="previewTable"></table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/upload.js') }}?v={{ config.get('APP_VERSION','1') }}"></script>
+{% endblock %}

@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row g-3">
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="h6 mb-0">Model comparison</div>
+            <div class="d-flex gap-2">
+              <select class="form-select form-select-sm" id="modelPicker" style="min-width: 260px;"></select>
+              <a href="/train" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-circle"></i> Train new</a>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle" id="modelsTable"></table>
+          </div>
+          <div class="mt-3" id="modelMetricStrip"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Actual vs Predicted</div>
+          <canvas id="chartActualPred"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Residual distribution</div>
+          <canvas id="chartResiduals"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Model diagnostic graphs (separate from Analytics)</div>
+          <div class="text-muted small mb-3">These graphs are specific to the selected trained model: learning curve, importance, and error structure.</div>
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Learning curve (R²)</div>
+                <canvas id="chartLearningCurve"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Learning curve (RMSE)</div>
+                <canvas id="chartLearningCurveRmse"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Learning curve (MAE)</div>
+                <canvas id="chartLearningCurveMae"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Residuals vs predicted</div>
+                <canvas id="chartResidualVsPred"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Feature importance (top)</div>
+                <canvas id="chartImportance"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Cross-validation scores</div>
+                <canvas id="chartCvScores"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">ROC curve (High demand) • AUC</div>
+                <canvas id="chartRocAuc"></canvas>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">High demand metrics (from predictions)</div>
+                <div id="highDemandMetrics" class="small text-muted">—</div>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-2">Model scores (comparison)</div>
+                <canvas id="chartScoreCompare"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Model insights (why demand changes)</div>
+            <a class="btn btn-sm btn-outline-primary" href="/reports"><i class="bi bi-download"></i> Download report</a>
+          </div>
+          <div id="modelInsights" class="text-muted">Select a model to view factor influence and correlations.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="h6 mb-0">AI summary (Gemini)</div>
+            <div class="d-flex gap-2">
+              <input id="aiContext" class="form-control form-control-sm" style="min-width:280px;" placeholder="Context (e.g., Kigali, Rwanda)" value="Kigali, Rwanda">
+              <button class="btn btn-sm btn-primary" id="aiGenerateBtn"><i class="bi bi-stars"></i> Generate</button>
+            </div>
+          </div>
+          <div class="text-muted small mb-2">Uses your `GEMINI_API_KEY` to summarize performance and explain demand drivers. Output is stored and added to the HTML report.</div>
+          <div id="aiSummary" class="text-muted">Select a model, then click Generate.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/performance.js') }}?v={{ config.get('APP_VERSION','1') }}"></script>
+{% endblock %}

@@ -1,0 +1,39 @@
+{# Reusable UI primitives (Jinja macros) #}
+
+{% macro sidebar_link(label, href, icon, active, key) -%}
+  <a class="sidebar-link {{ 'is-active' if active == key else '' }}" href="{{ href }}">
+    <span class="sidebar-ico"><i class="bi bi-{{ icon }}"></i></span>
+    <span class="sidebar-label">{{ label }}</span>
+  </a>
+{%- endmacro %}
+
+{% macro section_kicker(text) -%}
+  <div class="section-kicker">{{ text }}</div>
+{%- endmacro %}
+
+{% macro empty_state(title, body, cta_href, cta_label, icon='activity') -%}
+  <div class="empty">
+    <div class="empty-ico"><i class="bi bi-{{ icon }}"></i></div>
+    <div class="empty-t">{{ title }}</div>
+    <div class="empty-b">{{ body }}</div>
+    <a class="btn btn-primary btn-sm" href="{{ cta_href }}"><i class="bi bi-arrow-right-circle"></i> {{ cta_label }}</a>
+  </div>
+{%- endmacro %}
+
+{% macro metric_card(id_label, id_value, label, helper='', primary=False, icon='graph-up') -%}
+  <div class="metric {{ 'metric-primary' if primary else '' }}">
+    <div class="metric-top">
+      <div class="metric-label" id="{{ id_label }}">{{ label }}</div>
+      <div class="metric-ico"><i class="bi bi-{{ icon }}"></i></div>
+    </div>
+    <div class="metric-value" id="{{ id_value }}">—</div>
+    {% if helper %}
+      <div class="metric-help">{{ helper }}</div>
+    {% endif %}
+  </div>
+{%- endmacro %}
+
+{% macro stepper() -%}
+  <div class="stepper" id="workflowSteps"></div>
+{%- endmacro %}
+

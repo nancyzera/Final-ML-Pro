@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row g-3">
+    <div class="col-12 col-lg-5">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Preprocessing</div>
+          <div class="mb-3">
+            <label class="form-label">Dataset</label>
+            <select class="form-select" id="datasetSelect"></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Target column</label>
+            <select class="form-select" id="targetColumn"></select>
+            <div class="form-text">Target must be numeric (bike demand).</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Test size: <span id="testSizeLabel">0.20</span></label>
+            <input type="range" class="form-range" id="testSize" min="0.05" max="0.50" step="0.05" value="0.20">
+          </div>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="scaleNumeric" checked>
+            <label class="form-check-label" for="scaleNumeric">Scale numeric features (recommended)</label>
+          </div>
+          <button class="btn btn-primary w-100" id="runPreprocess"><i class="bi bi-sliders"></i> Save preprocessing</button>
+          <div class="small text-muted mt-2">Next: <a href="/train">Model Training</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Preprocessing summary</div>
+          <div id="preprocessSummary" class="text-muted">Select a dataset to see details.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/preprocess.js') }}?v={{ config.get('APP_VERSION','1') }}"></script>
+{% endblock %}

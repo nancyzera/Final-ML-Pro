@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="row g-3">
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Report (download)</div>
+          <div class="mb-3">
+            <label class="form-label">Choose model</label>
+            <select class="form-select" id="reportModelSelect"></select>
+            <div class="form-text">Report includes metrics, insights, and analytics charts with explanations.</div>
+          </div>
+          <div class="d-grid gap-2">
+            <a class="btn btn-primary" id="downloadReportBtn" href="#"><i class="bi bi-download"></i> Download HTML report</a>
+          </div>
+          <hr class="my-3">
+          <div class="h6 mb-2">Exports (CSV)</div>
+          <div class="d-grid gap-2">
+            <a class="btn btn-outline-primary" href="/api/export/predictions"><i class="bi bi-download"></i> Export prediction history (CSV)</a>
+            <a class="btn btn-outline-primary" href="/api/export/models"><i class="bi bi-download"></i> Export model results (CSV)</a>
+            <a class="btn btn-outline-primary" href="/api/export/datasets"><i class="bi bi-download"></i> Export dataset list (CSV)</a>
+          </div>
+          <div class="small text-muted mt-2">Optional PDF export can be added later (ReportLab/WeasyPrint).</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Model summary</div>
+          <div id="reportStats" class="text-muted">Select a model to see summary.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/reports.js') }}?v={{ config.get('APP_VERSION','1') }}"></script>
+{% endblock %}
