@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: bike-demand-dashboard
+    runtime: python
+    rootDir: bike-demand-dashboard
+    plan: starter
+    buildCommand: pip install --upgrade pip && pip install -r requirements.prod.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 wsgi:app
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    disk:
+      name: bike-demand-dashboard-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.11
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SQLITE_PATH
+        value: /var/data/app.db
+      - key: UPLOAD_FOLDER
+        value: /var/data/uploads
+      - key: SAVED_MODELS_FOLDER
+        value: /var/data/saved_models
+      - key: EXPORTS_FOLDER
+        value: /var/data/exports
+      - key: SEND_FILE_MAX_AGE_DEFAULT
+        value: "300"
