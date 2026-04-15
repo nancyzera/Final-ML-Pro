@@ -21,8 +21,11 @@ def build_charts_payload(df: pd.DataFrame, target_column: Optional[str] = None) 
     if chosen_target:
         payload["demand_histogram"] = histogram_series(_col_series(df, chosen_target))
         payload["demand_boxplot"] = boxplot_stats(_col_series(df, chosen_target))
+        payload["demand_histogram"]["summary"] = _histogram_summary(df, chosen_target)
+        payload["demand_boxplot"]["summary"] = _boxplot_summary(payload["demand_boxplot"], chosen_target)
 
     payload["correlation_heatmap"] = correlation_matrix(df, numeric_columns)
+    payload["correlation_heatmap"]["summary"] = _heatmap_summary(payload["correlation_heatmap"])
 
     if time_col and chosen_target:
         payload["demand_over_time"] = time_series(df, time_col, chosen_target)
@@ -30,30 +33,46 @@ def build_charts_payload(df: pd.DataFrame, target_column: Optional[str] = None) 
     elif chosen_target:
         payload["demand_over_time"] = index_time_series(df, chosen_target)
         payload["cumulative_demand_area"] = index_cumulative(df, chosen_target)
+    payload["demand_over_time"]["summary"] = _time_series_summary(payload["demand_over_time"], chosen_target)
+    payload["cumulative_demand_area"]["summary"] = _cumulative_summary(payload["cumulative_demand_area"], chosen_target)
 
     cat_for_bar = _pick_category_column(df, categorical_columns)
     if cat_for_bar and chosen_target and cat_for_bar != chosen_target:
         payload["demand_by_category_bar"] = category_bar(df, cat_for_bar, chosen_target)
         payload["category_share_pie"] = category_pie(df, cat_for_bar)
+        payload["demand_by_category_bar"]["summary"] = _top_bar_summary(payload["demand_by_category_bar"], "highest average demand")
+        payload["category_share_pie"]["summary"] = _share_summary(payload["category_share_pie"])
 
     temp_col = _pick_temperature_column(df, numeric_columns)
     if temp_col and chosen_target and temp_col != chosen_target:
         payload["temp_vs_demand_scatter"] = scatter_xy(df, temp_col, chosen_target)
+        payload["temp_vs_demand_scatter"]["summary"] = _scatter_summary(payload["temp_vs_demand_scatter"])
 
     humidity_col = _pick_humidity_column(df, numeric_columns)
     if humidity_col and chosen_target and humidity_col != chosen_target:
         payload["humidity_vs_demand_scatter"] = scatter_xy(df, humidity_col, chosen_target)
+        payload["humidity_vs_demand_scatter"]["summary"] = _scatter_summary(payload["humidity_vs_demand_scatter"])
 
     if time_col and chosen_target:
         payload["demand_by_hour_bar"] = demand_by_hour(df, time_col, chosen_target)
         payload["demand_by_weekday_bar"] = demand_by_weekday(df, time_col, chosen_target)
         payload["demand_by_month_bar"] = demand_by_month(df, time_col, chosen_target)
+        payload["demand_by_hour_bar"]["summary"] = _top_bar_summary(payload["demand_by_hour_bar"], "peak demand hour")
+        payload["demand_by_weekday_bar"]["summary"] = _top_bar_summary(payload["demand_by_weekday_bar"], "busiest weekday")
+        payload["demand_by_month_bar"]["summary"] = _top_bar_summary(payload["demand_by_month_bar"], "strongest month")
+        payload["hourly_profile_radar"] = radar_profile(payload["demand_by_hour_bar"], "Hourly demand profile")
+        payload["weekday_profile_polar"] = polar_profile(payload["demand_by_weekday_bar"], "Weekday demand mix")
 
     work_col = _pick_workingday_column(df)
     if work_col and chosen_target and work_col != chosen_target:
         payload["demand_by_workingday_bar"] = category_bar(df, work_col, chosen_target, max_cats=5)
+        payload["demand_by_workingday_bar"]["summary"] = _top_bar_summary(payload["demand_by_workingday_bar"], "highest working-day segment")
 
     payload["missing_values_bar"] = missing_values_bar(df, max_cols=15)
+    payload["missing_values_bar"]["summary"] = _missing_summary(payload["missing_values_bar"])
+
+    if temp_col and humidity_col and chosen_target and temp_col != chosen_target and humidity_col != chosen_target:
+        payload["temp_humidity_demand_bubble"] = bubble_xyz(df, temp_col, humidity_col, chosen_target)
 
     if chosen_target:
         payload["extra_numeric_scatters"] = extra_numeric_scatters(
@@ -78,6 +97,8 @@ def build_charts_payload(df: pd.DataFrame, target_column: Optional[str] = None) 
                 payload["extra_charts"].extend(shared)
         except Exception:
             pass
+
+    payload["story_cards"] = _story_cards(payload, chosen_target=chosen_target, time_col=time_col)
 
     return payload
 
@@ -446,9 +467,93 @@ def scatter_xy(df: pd.DataFrame, x_col: str, y_col: str, max_points: int = 600) 
     tmp = tmp.dropna()
     if tmp.empty:
         return {"points": [], "x_label": x_col, "y_label": y_col}
+    tmp = tmp.sample(n=min(max_points, len(tmp)), random_state=42).sort_values(x_col)
+    xs = tmp[x_col].to_numpy(dtype=float)
+    ys = tmp[y_col].to_numpy(dtype=float)
+    points = [{"x": float(x), "y": float(y)} for x, y in zip(xs, ys)]
+
+    slope = None
+    intercept = None
+    corr = None
+    trend_points = []
+    if len(tmp) >= 2:
+        try:
+            slope, intercept = np.polyfit(xs, ys, 1)
+            corr = float(np.corrcoef(xs, ys)[0, 1])
+            x_min = float(np.min(xs))
+            x_max = float(np.max(xs))
+            trend_points = [
+                {"x": x_min, "y": float((slope * x_min) + intercept)},
+                {"x": x_max, "y": float((slope * x_max) + intercept)},
+            ]
+        except Exception:
+            slope = None
+            intercept = None
+            corr = None
+            trend_points = []
+    return {
+        "points": points,
+        "x_label": x_col,
+        "y_label": y_col,
+        "slope": float(slope) if slope is not None else None,
+        "intercept": float(intercept) if intercept is not None else None,
+        "correlation": corr,
+        "trend_points": trend_points,
+    }
+
+
+def bubble_xyz(df: pd.DataFrame, x_col: str, y_col: str, z_col: str, max_points: int = 120) -> Dict:
+    tmp = pd.DataFrame({x_col: _col_series(df, x_col), y_col: _col_series(df, y_col), z_col: _col_series(df, z_col)})
+    tmp[x_col] = pd.to_numeric(tmp[x_col], errors="coerce")
+    tmp[y_col] = pd.to_numeric(tmp[y_col], errors="coerce")
+    tmp[z_col] = pd.to_numeric(tmp[z_col], errors="coerce")
+    tmp = tmp.dropna()
+    if tmp.empty:
+        return {"points": [], "x_label": x_col, "y_label": y_col, "size_label": z_col, "summary": "Bubble view unavailable."}
     tmp = tmp.sample(n=min(max_points, len(tmp)), random_state=42)
-    points = [{"x": float(x), "y": float(y)} for x, y in zip(tmp[x_col].to_numpy(), tmp[y_col].to_numpy())]
-    return {"points": points, "x_label": x_col, "y_label": y_col}
+    z = tmp[z_col].to_numpy(dtype=float)
+    z_min = float(np.min(z))
+    z_max = float(np.max(z))
+    scale = (z_max - z_min) or 1.0
+    points = [
+        {"x": float(x), "y": float(y), "r": float(6 + (18 * ((float(v) - z_min) / scale)))}
+        for x, y, v in zip(tmp[x_col].to_numpy(dtype=float), tmp[y_col].to_numpy(dtype=float), z)
+    ]
+    return {
+        "points": points,
+        "x_label": x_col,
+        "y_label": y_col,
+        "size_label": z_col,
+        "summary": f"Bubble size represents {z_col}, so larger circles mark higher {z_col} observations across {x_col} and {y_col}.",
+    }
+
+
+def radar_profile(payload: Dict, label: str) -> Dict:
+    labels = payload.get("labels") or []
+    values = [float(v) for v in (payload.get("values") or [])]
+    if not labels or not values:
+        return {"labels": [], "values": [], "label": label}
+    peak_idx = int(np.argmax(values))
+    return {
+        "labels": labels,
+        "values": values,
+        "label": label,
+        "summary": f"Radar view emphasizes the shape of the cycle; strongest segment is {labels[peak_idx]}.",
+    }
+
+
+def polar_profile(payload: Dict, label: str) -> Dict:
+    labels = payload.get("labels") or []
+    values = [float(v) for v in (payload.get("values") or [])]
+    if not labels or not values:
+        return {"labels": [], "values": [], "label": label}
+    low_idx = int(np.argmin(values))
+    return {
+        "labels": labels,
+        "values": values,
+        "label": label,
+        "summary": f"Polar view makes relative weekday intensity easier to compare; lowest segment is {labels[low_idx]}.",
+    }
 
 
 def _pick_time_column(df: pd.DataFrame, datetime_columns):
@@ -557,6 +662,127 @@ def missing_values_bar(df: pd.DataFrame, max_cols: int = 15) -> Dict:
     if miss.empty:
         return {"labels": [], "values": []}
     return {"labels": [str(c) for c in miss.index.tolist()], "values": [int(v) for v in miss.to_numpy()]}
+
+
+def _time_series_summary(payload: Dict, target_col: str) -> str:
+    values = [float(v) for v in (payload.get("values") or [])]
+    labels = payload.get("labels") or []
+    if len(values) < 2:
+        return f"Tracks {target_col} across the selected timeline."
+    peak_idx = int(np.argmax(values))
+    trend = "upward" if values[-1] > values[0] else "downward"
+    return f"Overall trend is {trend}, with the highest observed level near {labels[peak_idx]}."
+
+
+def _cumulative_summary(payload: Dict, target_col: str) -> str:
+    values = [float(v) for v in (payload.get("values") or [])]
+    if not values:
+        return f"Cumulative view of {target_col}."
+    return f"Shows total accumulated {target_col} reaching {values[-1]:.1f} by the latest point."
+
+
+def _top_bar_summary(payload: Dict, descriptor: str) -> str:
+    labels = payload.get("labels") or []
+    values = payload.get("values") or []
+    if not labels or not values:
+        return "No clear grouping was available for this view."
+    idx = int(np.argmax(values))
+    return f"{descriptor.capitalize()} is {labels[idx]} at {float(values[idx]):.2f}."
+
+
+def _share_summary(payload: Dict) -> str:
+    labels = payload.get("labels") or []
+    values = [float(v) for v in (payload.get("values") or [])]
+    if not labels or not values:
+        return "Category mix is unavailable."
+    total = sum(values) or 1.0
+    idx = int(np.argmax(values))
+    share = values[idx] / total
+    return f"{labels[idx]} is the largest segment, representing {share:.0%} of observed records."
+
+
+def _scatter_summary(payload: Dict) -> str:
+    points = payload.get("points") or []
+    if len(points) < 8:
+        return "There are not enough paired observations to show a stable pattern."
+    corr = float(payload.get("correlation") or 0.0)
+    slope = payload.get("slope")
+    if abs(corr) < 0.15:
+        direction = "little clear linear relationship"
+    elif corr > 0:
+        direction = f"a positive association (corr {corr:.2f})"
+    else:
+        direction = f"a negative association (corr {corr:.2f})"
+    slope_text = f" The fitted slope is {float(slope):.3f}." if slope is not None else ""
+    return f"This scatter suggests {direction} between {payload.get('x_label') or 'x'} and {payload.get('y_label') or 'y'}.{slope_text}"
+
+
+def _histogram_summary(df: pd.DataFrame, target_col: str) -> str:
+    s = pd.to_numeric(_col_series(df, target_col), errors="coerce").dropna()
+    if s.empty:
+        return f"Distribution of {target_col}."
+    return f"Most values fall around median {float(s.median()):.1f}, with mean {float(s.mean()):.1f} and spread from {float(s.min()):.1f} to {float(s.max()):.1f}."
+
+
+def _boxplot_summary(stats: Dict, target_col: str) -> str:
+    if stats.get("median") is None:
+        return f"Distribution summary for {target_col}."
+    iqr = float(stats["q3"]) - float(stats["q1"])
+    return f"Median {float(stats['median']):.1f}; middle 50% spans {float(stats['q1']):.1f} to {float(stats['q3']):.1f} (IQR {iqr:.1f})."
+
+
+def _heatmap_summary(payload: Dict) -> str:
+    labels = payload.get("labels") or []
+    matrix = payload.get("matrix") or []
+    if len(labels) < 2 or not matrix:
+        return "Correlation heatmap is unavailable for this dataset."
+    best = None
+    for cell in matrix:
+        x = int(cell.get("x", -1))
+        y = int(cell.get("y", -1))
+        v = float(cell.get("v", 0.0))
+        if x == y:
+            continue
+        score = abs(v)
+        if best is None or score > best[0]:
+            best = (score, x, y, v)
+    if not best:
+        return "No strong feature-to-feature relationship stands out."
+    _, x, y, v = best
+    return f"Strongest relationship is {labels[y]} vs {labels[x]} with correlation {v:.2f}."
+
+
+def _missing_summary(payload: Dict) -> str:
+    labels = payload.get("labels") or []
+    values = payload.get("values") or []
+    if not labels or not values:
+        return "No missing values were detected in the main columns."
+    idx = int(np.argmax(values))
+    return f"The largest missing-value burden is in {labels[idx]} with {int(values[idx])} blanks."
+
+
+def _story_cards(payload: Dict, chosen_target: Optional[str], time_col: Optional[str]) -> list:
+    cards = []
+    if chosen_target:
+        hist = payload.get("demand_histogram") or {}
+        if hist.get("summary"):
+            cards.append({"title": "Demand distribution", "body": hist["summary"]})
+    by_hour = payload.get("demand_by_hour_bar") or {}
+    if time_col and by_hour.get("summary"):
+        cards.append({"title": "Hourly demand pattern", "body": by_hour["summary"]})
+    by_weekday = payload.get("demand_by_weekday_bar") or {}
+    if by_weekday.get("summary"):
+        cards.append({"title": "Weekday pattern", "body": by_weekday["summary"]})
+    scatter = payload.get("temp_vs_demand_scatter") or {}
+    if scatter.get("summary"):
+        cards.append({"title": "Temperature signal", "body": scatter["summary"]})
+    heat = payload.get("correlation_heatmap") or {}
+    if heat.get("summary"):
+        cards.append({"title": "Feature relationships", "body": heat["summary"]})
+    missing = payload.get("missing_values_bar") or {}
+    if missing.get("summary"):
+        cards.append({"title": "Data quality", "body": missing["summary"]})
+    return cards[:6]
 
 
 def extra_numeric_scatters(df: pd.DataFrame, numeric_columns, target_col: str, exclude_cols: set, max_charts: int = 10):

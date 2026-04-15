@@ -8,11 +8,12 @@ import pandas as pd
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
+from sklearn.metrics import make_scorer, precision_score
 
 from services.preprocess_service import build_preprocessor, split_xy
 from services.model_registry import available_models as registry_available_models
 from services.model_registry import get_estimator
-from utils.metrics_utils import regression_metrics
+from utils.metrics_utils import classification_metrics, regression_metrics
 
 
 def available_models() -> Dict[str, str]:
@@ -31,6 +32,7 @@ def train_model(
     params: Dict[str, Any] | None = None,
     cv_folds: int | None = None,
     cross_validate: bool | None = None,
+    task: str = "regression",
 ) -> Tuple[Pipeline, Dict[str, float], Dict[str, Any]]:
     X, y = split_xy(df, target_column)
     # Defensive: ensure target has no NaN/inf before training.
@@ -55,13 +57,19 @@ def train_model(
     except Exception:
         y_series = None
 
+    task = "classification" if str(task).strip().lower() == "classification" else "regression"
+    task_details: Dict[str, Any] = {"task": task}
+    if task == "classification":
+        y, target_transform = _build_high_demand_target(y)
+        task_details.update(target_transform)
+
     preprocessor, preprocess_schema = build_preprocessor(df, feature_columns, scale_numeric=scale_numeric)
-    model = get_estimator(model_name, params=params or {}, task="regression")
+    model = get_estimator(model_name, params=params or {}, task=task)
     pipeline = Pipeline(steps=[("preprocess", preprocessor), ("model", model)])
 
     # Optional cross-validation (quick model sanity check)
     n_rows = int(X.shape[0])
-    cv_k = int(cv_folds or 5)
+    cv_k = int(cv_folds or 10)
     cv_k = max(2, min(10, cv_k))
     do_cv = bool(cross_validate) if cross_validate is not None else (n_rows <= 8000)
     cv_summary: Dict[str, Any] = {"enabled": False}
@@ -80,55 +88,89 @@ def train_model(
                 y_cv = y_series.to_numpy(dtype=float) if y_series is not None else y
 
             splitter = KFold(n_splits=cv_k, shuffle=True, random_state=42)
-            r2_scores = cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="r2")
-            # sklearn provides neg RMSE scorer in recent versions
-            rmse_scores = None
-            try:
-                rmse_scores = -cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="neg_root_mean_squared_error")
-            except Exception:
-                rmse_scores = None
-
-            cv_summary = {
-                "enabled": True,
-                "folds": int(cv_k),
-                "rows_used": int(getattr(X_cv, "shape", [len(y_cv)])[0]),
-                "r2_scores": [float(x) for x in np.asarray(r2_scores, dtype=float).tolist()],
-                "r2_mean": float(np.nanmean(r2_scores)),
-                "r2_std": float(np.nanstd(r2_scores)),
-            }
-            if rmse_scores is not None:
-                cv_summary.update(
-                    {
-                        "rmse_scores": [float(x) for x in np.asarray(rmse_scores, dtype=float).tolist()],
-                        "rmse_mean": float(np.nanmean(rmse_scores)),
-                        "rmse_std": float(np.nanstd(rmse_scores)),
-                    }
+            if task == "classification":
+                acc_scores = cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="accuracy")
+                f1_weighted = cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="f1_weighted")
+                precision_weighted = cross_val_score(
+                    pipeline,
+                    X_cv,
+                    y_cv,
+                    cv=splitter,
+                    scoring=make_scorer(precision_score, average="weighted", zero_division=0),
                 )
+                cv_summary = {
+                    "enabled": True,
+                    "folds": int(cv_k),
+                    "rows_used": int(getattr(X_cv, "shape", [len(y_cv)])[0]),
+                    "accuracy_scores": [float(x) for x in np.asarray(acc_scores, dtype=float).tolist()],
+                    "accuracy_mean": float(np.nanmean(acc_scores)),
+                    "accuracy_std": float(np.nanstd(acc_scores)),
+                    "f1_weighted_scores": [float(x) for x in np.asarray(f1_weighted, dtype=float).tolist()],
+                    "f1_weighted_mean": float(np.nanmean(f1_weighted)),
+                    "f1_weighted_std": float(np.nanstd(f1_weighted)),
+                    "precision_weighted_scores": [float(x) for x in np.asarray(precision_weighted, dtype=float).tolist()],
+                    "precision_weighted_mean": float(np.nanmean(precision_weighted)),
+                    "precision_weighted_std": float(np.nanstd(precision_weighted)),
+                }
+            else:
+                r2_scores = cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="r2")
+                rmse_scores = None
+                try:
+                    rmse_scores = -cross_val_score(pipeline, X_cv, y_cv, cv=splitter, scoring="neg_root_mean_squared_error")
+                except Exception:
+                    rmse_scores = None
+
+                cv_summary = {
+                    "enabled": True,
+                    "folds": int(cv_k),
+                    "rows_used": int(getattr(X_cv, "shape", [len(y_cv)])[0]),
+                    "r2_scores": [float(x) for x in np.asarray(r2_scores, dtype=float).tolist()],
+                    "r2_mean": float(np.nanmean(r2_scores)),
+                    "r2_std": float(np.nanstd(r2_scores)),
+                }
+                if rmse_scores is not None:
+                    cv_summary.update(
+                        {
+                            "rmse_scores": [float(x) for x in np.asarray(rmse_scores, dtype=float).tolist()],
+                            "rmse_mean": float(np.nanmean(rmse_scores)),
+                            "rmse_std": float(np.nanstd(rmse_scores)),
+                        }
+                    )
         except Exception:
             cv_summary = {"enabled": False}
 
+    stratify = y if task == "classification" and np.unique(y).size > 1 else None
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=float(test_size), random_state=42
+        X, y, test_size=float(test_size), random_state=42, stratify=stratify
     )
 
     t0 = time.time()
     pipeline.fit(X_train, y_train)
     train_time_sec = float(time.time() - t0)
     y_pred = pipeline.predict(X_test)
+    y_proba, decision_scores = _classification_scores(pipeline, X_test) if task == "classification" else (None, None)
 
     n_features = _safe_feature_count(pipeline, fallback=len(feature_columns))
-    metrics = regression_metrics(y_test, y_pred, n_features=n_features)
+    if task == "classification":
+        metrics = classification_metrics(y_test, y_pred, y_proba=y_proba, decision_scores=decision_scores)
+        metrics["support"] = float(len(y_test))
+    else:
+        metrics = regression_metrics(y_test, y_pred, n_features=n_features)
 
     # store small samples for charts (avoid huge payloads)
     sample_size = int(min(250, len(y_test)))
     sample_idx = np.linspace(0, len(y_test) - 1, num=sample_size, dtype=int) if sample_size else []
-    chart_payload = {
-        "y_true": [float(y_test[i]) for i in sample_idx],
-        "y_pred": [float(y_pred[i]) for i in sample_idx],
-        "residuals": [float(y_test[i] - y_pred[i]) for i in sample_idx],
-    }
+    chart_payload = _build_chart_payload(
+        y_test=y_test,
+        y_pred=y_pred,
+        sample_idx=sample_idx,
+        task=task,
+        y_proba=y_proba,
+        decision_scores=decision_scores,
+    )
 
     meta = {
+        "task": task,
         "target_column": target_column,
         "feature_columns": feature_columns,
         "ignored_columns": ignored_columns,
@@ -143,6 +185,7 @@ def train_model(
             "scale_numeric": bool(scale_numeric),
             "params": params or {},
             "cross_validation": cv_summary,
+            "task_details": task_details,
         },
     }
 
@@ -195,3 +238,79 @@ def _safe_feature_count(pipeline: Pipeline, fallback: int) -> int:
     except Exception:
         pass
     return int(fallback)
+
+
+def _build_high_demand_target(y: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+    y_arr = np.asarray(y, dtype=float)
+    threshold = float(np.nanmedian(y_arr))
+    y_bin = (y_arr > threshold).astype(int)
+    if np.unique(y_bin).size < 2:
+        raise ValueError("Classification training needs at least two classes after building the high-demand target.")
+    return y_bin, {
+        "target_mode": "high_demand_binary",
+        "threshold": threshold,
+        "positive_label": "High demand",
+        "negative_label": "Low demand",
+    }
+
+
+def _classification_scores(pipeline: Pipeline, X_test: pd.DataFrame) -> Tuple[Any, Any]:
+    y_proba = None
+    decision_scores = None
+    if hasattr(pipeline, "predict_proba"):
+        try:
+            y_proba = pipeline.predict_proba(X_test)
+            if isinstance(y_proba, np.ndarray) and y_proba.ndim == 2 and y_proba.shape[1] == 2:
+                y_proba = y_proba[:, 1]
+        except Exception:
+            y_proba = None
+    if hasattr(pipeline, "decision_function"):
+        try:
+            decision_scores = pipeline.decision_function(X_test)
+        except Exception:
+            decision_scores = None
+    elif y_proba is not None:
+        try:
+            decision_scores = np.asarray(y_proba, dtype=float)
+        except Exception:
+            decision_scores = None
+    return y_proba, decision_scores
+
+
+def _build_chart_payload(
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    sample_idx,
+    task: str,
+    y_proba=None,
+    decision_scores=None,
+) -> Dict[str, Any]:
+    payload = {
+        "task": task,
+        "y_true": [float(y_test[i]) for i in sample_idx],
+        "y_pred": [float(y_pred[i]) for i in sample_idx],
+    }
+    if task == "classification":
+        payload.update(
+            {
+                "actual_series": [int(y_test[i]) for i in sample_idx],
+                "predicted_series": [int(y_pred[i]) for i in sample_idx],
+                "actual_labels": [f"Obs {j + 1}" for j in range(len(sample_idx))],
+            }
+        )
+        if y_proba is not None:
+            y_proba_arr = np.asarray(y_proba, dtype=float).ravel()
+            payload["probability_series"] = [float(y_proba_arr[i]) for i in sample_idx]
+        if decision_scores is not None:
+            dec_arr = np.asarray(decision_scores, dtype=float).ravel()
+            payload["decision_scores"] = [float(dec_arr[i]) for i in sample_idx]
+    else:
+        payload.update(
+            {
+                "actual_series": [float(y_test[i]) for i in sample_idx],
+                "predicted_series": [float(y_pred[i]) for i in sample_idx],
+                "actual_labels": [f"Obs {j + 1}" for j in range(len(sample_idx))],
+                "residuals": [float(y_test[i] - y_pred[i]) for i in sample_idx],
+            }
+        )
+    return payload

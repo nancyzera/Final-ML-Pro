@@ -22,15 +22,26 @@ def predict(model_id: int):
         return jsonify({"success": False, "message": "Model metadata missing feature columns."}), 500
 
     try:
-        predicted_value, _details = predict_from_inputs(model.model_path, inputs, feature_columns=feature_columns)
+        predicted_value, details = predict_from_inputs(model.model_path, inputs, feature_columns=feature_columns)
         record = PredictionHistory(model_id=model.id, input_data=json_dumps(inputs), predicted_value=float(predicted_value))
         db.session.add(record)
         db.session.commit()
+        task = str(meta.get("task") or "regression")
+        prediction_payload = {
+            "predicted_value": float(predicted_value),
+            "prediction": _prediction_to_dict(record),
+            "task": task,
+        }
+        if task == "classification":
+            td = (meta.get("training") or {}).get("task_details") or {}
+            label = td.get("positive_label", "High demand") if int(round(predicted_value)) == 1 else td.get("negative_label", "Low demand")
+            prediction_payload["predicted_label"] = label
+        prediction_payload.update(details or {})
         return jsonify(
             {
                 "success": True,
                 "message": "Prediction generated.",
-                "data": {"predicted_value": float(predicted_value), "prediction": _prediction_to_dict(record)},
+                "data": prediction_payload,
             }
         )
     except Exception as e:
@@ -51,4 +62,3 @@ def _prediction_to_dict(p: PredictionHistory):
         "predicted_value": p.predicted_value,
         "predicted_at": p.predicted_at.isoformat() if p.predicted_at else None,
     }
-

@@ -1,7 +1,7 @@
 import os
 import time
 
-from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -63,7 +63,22 @@ def create_app():
 
     @app.get("/api/health")
     def health():
-        return {"success": True, "data": {"status": "ok"}}
+        from services.model_registry import get_catalog
+
+        catalog = get_catalog()
+        missing_deps = sorted({dep for item in catalog for dep in (item.get("missing_deps") or [])})
+        available_models = sum(1 for item in catalog if item.get("available"))
+        return {
+            "success": True,
+            "data": {
+                "status": "ok",
+                "models": {
+                    "available": available_models,
+                    "total": len(catalog),
+                    "missing_dependencies": missing_deps,
+                },
+            },
+        }
 
     @app.errorhandler(404)
     def handle_404(err):
@@ -86,7 +101,7 @@ def create_app():
     # UI routes
     @app.get("/")
     def home():
-        return redirect(url_for("ui_dashboard"))
+        return render_template("dashboard.html", active="Dashboard")
 
     @app.get("/dashboard")
     def ui_dashboard():

@@ -2,22 +2,33 @@ let datasets = [];
 let modelCatalog = [];
 let currentParams = {}; // model_key -> {paramKey: value}
 
+function byId(id) {
+  return document.getElementById(id);
+}
+
 function setOutput(html) {
-  document.getElementById('trainOutput').innerHTML = html;
+  const el = byId('trainOutput');
+  if (el) el.innerHTML = html;
 }
 
 function setScan(html) {
-  const el = document.getElementById('datasetScan');
+  const el = byId('datasetScan');
   if (el) el.innerHTML = html;
 }
 
 function setModelHint(text) {
-  const el = document.getElementById('modelHint');
+  const el = byId('modelHint');
   if (el) el.textContent = text;
 }
 
+function setModelTask(task) {
+  const el = byId('modelTaskDisplay');
+  if (!el) return;
+  el.value = task === 'classification' ? 'Classification' : 'Regression';
+}
+
 function renderParamsForm(modelName) {
-  const wrap = document.getElementById('modelParams');
+  const wrap = byId('modelParams');
   if (!wrap) return;
   const meta = modelCatalog.find(m => m.name === modelName);
   if (!meta) {
@@ -87,7 +98,7 @@ function renderParamsForm(modelName) {
 }
 
 function renderCatalogCards(datasetProfile) {
-  const wrap = document.getElementById('modelCatalog');
+  const wrap = byId('modelCatalog');
   if (!wrap) return;
   wrap.innerHTML = '';
 
@@ -125,10 +136,7 @@ function renderCatalogCards(datasetProfile) {
     let st = statusFor(m.name);
     let disabled = st.state === 'disabled';
 
-    if (m.task && m.task !== 'regression') {
-      st = { state: 'disabled', label: 'Classification', cls: 'text-bg-light border' };
-      disabled = true;
-    }
+    if (m.task === 'classification') st = { state: 'ok', label: 'Classification', cls: 'text-bg-info' };
     if (m.available === false) {
       st = { state: 'disabled', label: 'Not installed', cls: 'text-bg-light border' };
       disabled = true;
@@ -162,13 +170,13 @@ function renderCatalogCards(datasetProfile) {
   wrap.querySelectorAll('button[data-pick-model]').forEach(btn => {
     btn.addEventListener('click', () => {
       const name = btn.getAttribute('data-pick-model');
-      const sel = document.getElementById('modelSelect');
+      const sel = byId('modelSelect');
       if (!sel) return;
       const meta = modelCatalog.find(x => x.name === name);
-      if (meta?.task && meta.task !== 'regression') return;
       if (meta?.available === false) return;
       sel.value = name;
       setModelHint(meta ? `${meta.family} • ${meta.formula}` : 'Select a model to see details and formula.');
+      setModelTask(meta?.task || 'regression');
       renderParamsForm(name);
     });
   });
@@ -192,7 +200,8 @@ async function loadTrainPage() {
     return;
   }
   datasets = dsRes.data || [];
-  const dsSelect = document.getElementById('trainDataset');
+  const dsSelect = byId('trainDataset');
+  if (!dsSelect) return;
   dsSelect.innerHTML = '';
   const state = await window.apiGet('/api/state');
   const activeDatasetId = state?.data?.active_dataset_id;
@@ -211,33 +220,37 @@ async function loadTrainPage() {
     dsSelect.value = String(activeDatasetId || datasets[0].id);
   }
 
-  const modelsRes = await window.apiGet('/api/models/available');
-  const modelSelect = document.getElementById('modelSelect');
+  const modelSelect = byId('modelSelect');
+  if (!modelSelect) return;
   modelSelect.innerHTML = '';
-  if (modelsRes.success) {
-    Object.keys(modelsRes.data || {}).forEach(name => {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      modelSelect.appendChild(opt);
-    });
-  }
-
   const catalogRes = await window.apiGet('/api/models/catalog');
   modelCatalog = catalogRes.success ? (catalogRes.data || []) : [];
+  modelCatalog.filter(m => m.available !== false).forEach(meta => {
+    const opt = document.createElement('option');
+    opt.value = meta.name;
+    opt.textContent = `${meta.name} [${meta.task}]`;
+    modelSelect.appendChild(opt);
+  });
   modelSelect.onchange = () => {
     const name = modelSelect.value;
     const meta = modelCatalog.find(x => x.name === name);
     setModelHint(meta ? `${meta.family} • ${meta.formula}` : 'Select a model to see details and formula.');
+    setModelTask(meta?.task || 'regression');
     renderParamsForm(name);
   };
-  if (modelSelect.value) renderParamsForm(modelSelect.value);
+  if (modelSelect.value) {
+    const meta = modelCatalog.find(x => x.name === modelSelect.value);
+    setModelTask(meta?.task || 'regression');
+    renderParamsForm(modelSelect.value);
+  }
 
   await onTrainDatasetChanged();
 }
 
 async function onTrainDatasetChanged() {
-  const datasetId = document.getElementById('trainDataset').value;
+  const datasetEl = byId('trainDataset');
+  if (!datasetEl) return;
+  const datasetId = datasetEl.value;
   if (!datasetId) return;
   await window.apiPostJson('/api/state', { active_dataset_id: Number(datasetId) });
   const res = await window.apiGet(`/api/datasets/${datasetId}/summary`);
@@ -248,7 +261,8 @@ async function onTrainDatasetChanged() {
   const summary = res.data.summary;
   const ds = datasets.find(d => String(d.id) === String(datasetId));
 
-  const target = document.getElementById('trainTarget');
+  const target = byId('trainTarget');
+  if (!target) return;
   target.innerHTML = '';
   const cols = (summary.numeric_columns || []);
   cols.forEach(c => {
@@ -276,20 +290,28 @@ async function onTrainDatasetChanged() {
   `);
 }
 
-document.getElementById('trainDataset').addEventListener('change', onTrainDatasetChanged);
-document.getElementById('trainTestSize').addEventListener('input', (e) => {
-  document.getElementById('trainTestSizeLabel').textContent = Number(e.target.value).toFixed(2);
-});
+const trainDataset = byId('trainDataset');
+if (trainDataset) trainDataset.addEventListener('change', onTrainDatasetChanged);
 
-document.getElementById('trainBtn').addEventListener('click', async () => {
+const trainTestSize = byId('trainTestSize');
+if (trainTestSize) {
+  trainTestSize.addEventListener('input', (e) => {
+    const label = byId('trainTestSizeLabel');
+    if (label) label.textContent = Number(e.target.value).toFixed(2);
+  });
+}
+
+const trainBtn = byId('trainBtn');
+if (trainBtn) trainBtn.addEventListener('click', async () => {
   window.clearGlobalAlert();
-  const datasetId = document.getElementById('trainDataset').value;
-  const target = document.getElementById('trainTarget').value;
-  const modelName = document.getElementById('modelSelect').value;
-  const testSize = Number(document.getElementById('trainTestSize').value);
-  const scaleNumeric = document.getElementById('trainScaleNumeric').checked;
-  const crossValidate = document.getElementById('trainCrossValidate')?.checked ?? true;
-  const cvFolds = Number(document.getElementById('trainCvFolds')?.value ?? 5);
+  const datasetId = byId('trainDataset')?.value;
+  const target = byId('trainTarget')?.value;
+  const modelName = byId('modelSelect')?.value;
+  const modelMeta = modelCatalog.find(x => x.name === modelName) || {};
+  const testSize = Number(byId('trainTestSize')?.value ?? 0.2);
+  const scaleNumeric = byId('trainScaleNumeric')?.checked ?? true;
+  const crossValidate = byId('trainCrossValidate')?.checked ?? true;
+  const cvFolds = Number(byId('trainCvFolds')?.value ?? 5);
   if (!datasetId || !target || !modelName) {
     window.setGlobalAlert('warning', 'Select dataset, target, and model.');
     return;
@@ -300,6 +322,7 @@ document.getElementById('trainBtn').addEventListener('click', async () => {
     dataset_id: Number(datasetId),
     target_column: target,
     model_name: modelName,
+    task: modelMeta.task || 'regression',
     test_size: testSize,
     scale_numeric: scaleNumeric,
     cross_validate: crossValidate,
@@ -318,20 +341,29 @@ document.getElementById('trainBtn').addEventListener('click', async () => {
   const m = res.data.model;
   const meta = res.data.meta || {};
   const cv = meta.training?.cross_validation || {};
+  const task = meta.task || 'regression';
+  const metrics = meta.metrics || {};
+  const primaryName = meta.display_metrics?.primary_name || (task === 'classification' ? 'Accuracy' : 'R²');
+  const secondaryName = meta.display_metrics?.secondary_name || (task === 'classification' ? 'F1 weighted' : 'RMSE');
+  const primaryValue = Number(meta.display_metrics?.primary_value ?? m.primary_metric_value ?? m.r2_score ?? 0).toFixed(3);
+  const secondaryValue = Number(meta.display_metrics?.secondary_value ?? m.secondary_metric_value ?? m.adjusted_r2 ?? 0).toFixed(3);
   setOutput(`
     <div class="row g-2">
       <div class="col-12">
         <div class="p-3 rounded-4 border border-secondary-subtle bg-transparent">
           <div class="h6 mb-1">${window.escapeHtml(m.model_name)} trained</div>
-          <div class="small text-muted">Model ID: ${m.id} • Dataset: #${m.dataset_id}</div>
+          <div class="small text-muted">Model ID: ${m.id} • Dataset: #${m.dataset_id} • Task: ${window.escapeHtml(task)}</div>
           <div class="row mt-2 g-2 small">
-            <div class="col-6"><span class="text-muted">R²:</span> ${Number(m.r2_score).toFixed(3)}</div>
-            <div class="col-6"><span class="text-muted">Adj R²:</span> ${Number(m.adjusted_r2).toFixed(3)}</div>
-            <div class="col-6"><span class="text-muted">MAE:</span> ${Number(m.mae).toFixed(3)}</div>
-            <div class="col-6"><span class="text-muted">RMSE:</span> ${Number(m.rmse).toFixed(3)}</div>
+            <div class="col-6"><span class="text-muted">${window.escapeHtml(primaryName)}:</span> ${primaryValue}</div>
+            <div class="col-6"><span class="text-muted">${window.escapeHtml(secondaryName)}:</span> ${secondaryValue}</div>
+            <div class="col-6"><span class="text-muted">${task === 'classification' ? 'F1 score' : 'MAE'}:</span> ${task === 'classification' ? Number(metrics.f1_weighted || metrics.f1_micro || 0).toFixed(3) : Number(m.mae).toFixed(3)}</div>
+            <div class="col-6"><span class="text-muted">${task === 'classification' ? 'F1 micro' : 'RMSE'}:</span> ${task === 'classification' ? Number(metrics.f1_micro || 0).toFixed(3) : Number(m.rmse).toFixed(3)}</div>
+            <div class="col-6"><span class="text-muted">${task === 'classification' ? 'Precision weighted' : 'Adjusted R²'}:</span> ${task === 'classification' ? Number(metrics.precision_weighted || 0).toFixed(3) : Number(m.adjusted_r2).toFixed(3)}</div>
+            <div class="col-6"><span class="text-muted">${task === 'classification' ? 'Weighted average' : 'MAPE'}:</span> ${task === 'classification' ? Number(metrics.f1_weighted || 0).toFixed(3) : (metrics.mape != null ? `${(Number(metrics.mape) * 100).toFixed(1)}%` : '—')}</div>
           </div>
-          ${cv.enabled ? `<div class="mt-2 small text-muted">CV(${cv.folds}) • R² ${Number(cv.r2_mean || 0).toFixed(3)} ± ${Number(cv.r2_std || 0).toFixed(3)}${cv.rmse_mean != null ? ` • RMSE ${Number(cv.rmse_mean).toFixed(3)}` : ''}</div>` : ``}
+          ${cv.enabled ? `<div class="mt-2 small text-muted">CV(${cv.folds}) • ${task === 'classification' ? `Accuracy ${Number(cv.accuracy_mean || 0).toFixed(3)} ± ${Number(cv.accuracy_std || 0).toFixed(3)} • F1 weighted ${Number(cv.f1_weighted_mean || 0).toFixed(3)}` : `R² ${Number(cv.r2_mean || 0).toFixed(3)} ± ${Number(cv.r2_std || 0).toFixed(3)}${cv.rmse_mean != null ? ` • RMSE ${Number(cv.rmse_mean).toFixed(3)}` : ''}`}</div>` : ``}
           <div class="mt-2 small text-muted">Top factors: ${(meta.top_factors || []).map(window.escapeHtml).join(', ') || '—'}</div>
+          ${task === 'classification' ? `<div class="mt-2 small text-muted">High-demand threshold: ${Number(meta.training?.task_details?.threshold || 0).toFixed(3)}</div>` : ``}
           <div class="mt-3 d-flex gap-2">
             <a href="/performance" class="btn btn-sm btn-outline-primary"><i class="bi bi-graph-up-arrow"></i> View performance</a>
             <a href="/predictions" class="btn btn-sm btn-primary"><i class="bi bi-magic"></i> Predict</a>

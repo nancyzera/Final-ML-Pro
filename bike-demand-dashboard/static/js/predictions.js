@@ -25,7 +25,9 @@ async function loadModels() {
   models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.id;
-    opt.textContent = `#${m.id} • ${m.model_name} • R² ${Number(m.r2_score).toFixed(3)}`;
+    const scoreName = m.primary_metric_name || (m.task === 'classification' ? 'Accuracy' : 'R²');
+    const scoreValue = Number(m.primary_metric_value ?? m.r2_score ?? 0).toFixed(3);
+    opt.textContent = `#${m.id} • ${m.model_name} • ${scoreName} ${scoreValue}`;
     select.appendChild(opt);
   });
   select.disabled = false;
@@ -131,7 +133,17 @@ document.getElementById('predictBtn').addEventListener('click', async () => {
   }
   const card = document.getElementById('predictionResult');
   card.className = 'alert alert-success';
-  card.innerHTML = `<div class="fw-semibold">Predicted bike demand</div><div class="display-6">${Number(res.data.predicted_value).toFixed(2)}</div>`;
+  if ((res.data.task || modelMeta?.task) === 'classification') {
+    card.innerHTML = `
+      <div class="fw-semibold">Predicted demand class</div>
+      <div class="display-6">${window.escapeHtml(res.data.predicted_label || String(res.data.predicted_value))}</div>
+      <div class="small text-muted mt-2">Class value: ${Number(res.data.predicted_value || 0).toFixed(0)}</div>
+      ${res.data.predicted_probability != null ? `<div class="small text-muted">Probability: ${Number(res.data.predicted_probability).toFixed(3)}</div>` : ``}
+      ${res.data.decision_score != null ? `<div class="small text-muted">Decision: ${Number(res.data.decision_score).toFixed(3)}</div>` : ``}
+    `;
+  } else {
+    card.innerHTML = `<div class="fw-semibold">Predicted bike demand</div><div class="display-6">${Number(res.data.predicted_value).toFixed(2)}</div>`;
+  }
   card.classList.remove('d-none');
   await loadHistory();
 });

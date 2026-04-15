@@ -1,15 +1,21 @@
 let models = [];
-let chart1 = null;
-let chart2 = null;
-let chartLc = null;
-let chartLcRmse = null;
-let chartLcMae = null;
-let chartRvP = null;
-let chartImp = null;
-let chartCompare = null;
-let chartCv = null;
-let chartRoc = null;
 let currentModelId = null;
+const chartRefs = {};
+let fullscreenChart = null;
+let fullscreenTargetId = null;
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function getChartCanvas(id) {
+  const el = byId(id);
+  if (!el) {
+    console.warn(`Missing chart canvas: ${id}`);
+    return null;
+  }
+  return el;
+}
 
 function themeColors() {
   const css = getComputedStyle(document.documentElement);
@@ -20,39 +26,64 @@ function themeColors() {
   };
 }
 
+function metricValue(model, fallbackKey, fallback = 0) {
+  return Number(model?.[fallbackKey] ?? fallback);
+}
+
+function registerChart(id, chart) {
+  if (chartRefs[id]) window.chartDestroy(chartRefs[id]);
+  chartRefs[id] = chart;
+  return chart;
+}
+
 function renderModelsTable() {
-  const table = document.getElementById('modelsTable');
-  const columns = ['id', 'dataset_id', 'model_name', 'r2_score', 'adjusted_r2', 'mae', 'mse', 'rmse', 'trained_at'];
+  const table = byId('modelsTable');
+  const columns = ['id', 'dataset_id', 'model_name', 'task', 'primary_metric', 'secondary_metric', 'f1_score', 'f1_micro', 'precision_weighted', 'trained_at'];
   const rows = models.map(m => ({
-    ...m,
-    r2_score: Number(m.r2_score).toFixed(3),
-    adjusted_r2: Number(m.adjusted_r2).toFixed(3),
-    mae: Number(m.mae).toFixed(3),
-    mse: Number(m.mse).toFixed(3),
-    rmse: Number(m.rmse).toFixed(3),
+    id: m.id,
+    dataset_id: m.dataset_id,
+    model_name: m.model_name,
+    task: m.task || 'regression',
+    primary_metric: `${m.primary_metric_name || 'R²'} ${Number(m.primary_metric_value ?? m.r2_score ?? 0).toFixed(3)}`,
+    secondary_metric: `${m.secondary_metric_name || 'RMSE'} ${Number(m.secondary_metric_value ?? m.adjusted_r2 ?? 0).toFixed(3)}`,
+    f1_score: m.f1_weighted != null ? Number(m.f1_weighted).toFixed(3) : '—',
+    f1_micro: m.f1_micro != null ? Number(m.f1_micro).toFixed(3) : '—',
+    precision_weighted: m.precision_weighted != null ? Number(m.precision_weighted).toFixed(3) : '—',
     trained_at: m.trained_at ? new Date(m.trained_at).toLocaleString() : ''
   }));
   window.renderTable(table, columns, rows);
 }
 
 function renderMetricStrip(model, meta) {
-  const wrap = document.getElementById('modelMetricStrip');
+  const wrap = byId('modelMetricStrip');
   if (!wrap) return;
-  const m = model || {};
   const mx = meta?.metrics || {};
   const cv = meta?.training?.cross_validation || {};
-  const items = [
-    { k: 'R²', v: m.r2_score != null ? Number(m.r2_score).toFixed(3) : '—' },
-    { k: 'RMSE', v: m.rmse != null ? Number(m.rmse).toFixed(3) : '—' },
-    { k: 'MAE', v: m.mae != null ? Number(m.mae).toFixed(3) : '—' },
-    { k: 'MAPE', v: (mx.mape != null) ? `${(Number(mx.mape) * 100).toFixed(1)}%` : '—' },
-    { k: 'Explained Var', v: (mx.explained_variance != null) ? Number(mx.explained_variance).toFixed(3) : '—' },
-    { k: `CV R²`, v: (cv.enabled && cv.r2_mean != null) ? `${Number(cv.r2_mean).toFixed(3)} ± ${Number(cv.r2_std || 0).toFixed(3)}` : '—' },
-  ];
+  const task = meta?.task || model?.task || 'regression';
+  const items = task === 'classification'
+    ? [
+        { k: 'Accuracy', v: Number(mx.accuracy || 0).toFixed(3) },
+        { k: 'Precision', v: Number(mx.precision_weighted || mx.precision_micro || 0).toFixed(3) },
+        { k: 'F1 Score', v: Number(mx.f1_weighted || mx.f1_micro || 0).toFixed(3) },
+        { k: 'Micro Avg', v: Number(mx.f1_micro || 0).toFixed(3) },
+        { k: 'Weighted Avg', v: Number(mx.f1_weighted || 0).toFixed(3) },
+        { k: 'Decision', v: Number(mx.decision_abs_mean || mx.decision_mean || 0).toFixed(3) },
+        { k: 'AUC', v: mx.roc_auc != null ? Number(mx.roc_auc).toFixed(3) : '—' },
+        { k: 'CV Accuracy', v: cv.enabled ? `${Number(cv.accuracy_mean || 0).toFixed(3)} ± ${Number(cv.accuracy_std || 0).toFixed(3)}` : '—' },
+      ]
+    : [
+        { k: 'R²', v: Number(model?.r2_score ?? 0).toFixed(3) },
+        { k: 'RMSE', v: Number(model?.rmse ?? 0).toFixed(3) },
+        { k: 'MAE', v: Number(model?.mae ?? 0).toFixed(3) },
+        { k: 'MAPE', v: mx.mape != null ? `${(Number(mx.mape) * 100).toFixed(1)}%` : '—' },
+        { k: 'Explained Var', v: mx.explained_variance != null ? Number(mx.explained_variance).toFixed(3) : '—' },
+        { k: 'Adjusted R²', v: Number(model?.adjusted_r2 ?? 0).toFixed(3) },
+        { k: '10-Fold CV', v: cv.enabled ? `${Number(cv.r2_mean || 0).toFixed(3)} ± ${Number(cv.r2_std || 0).toFixed(3)}` : '—' },
+      ];
   wrap.innerHTML = `
     <div class="row g-2">
       ${items.map(it => `
-        <div class="col-6 col-lg-2">
+        <div class="col-6 col-lg-3">
           <div class="panel-soft p-3">
             <div class="text-uppercase text-muted small" style="letter-spacing:.06em">${window.escapeHtml(it.k)}</div>
             <div class="h5 mb-0">${window.escapeHtml(String(it.v))}</div>
@@ -64,7 +95,8 @@ function renderMetricStrip(model, meta) {
 }
 
 function populatePicker() {
-  const picker = document.getElementById('modelPicker');
+  const picker = byId('modelPicker');
+  if (!picker) return;
   picker.innerHTML = '';
   if (models.length === 0) {
     const opt = document.createElement('option');
@@ -77,200 +109,167 @@ function populatePicker() {
   models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.id;
-    opt.textContent = `#${m.id} • ${m.model_name} • R² ${Number(m.r2_score).toFixed(3)}`;
+    const scoreName = m.primary_metric_name || (m.task === 'classification' ? 'Accuracy' : 'R²');
+    const scoreValue = Number(m.primary_metric_value ?? m.r2_score ?? 0).toFixed(3);
+    opt.textContent = `#${m.id} • ${m.model_name} • ${scoreName} ${scoreValue}`;
     picker.appendChild(opt);
   });
   picker.disabled = false;
   picker.value = String(models[0].id);
 }
 
-function renderActualPred(meta) {
-  const { primaryRgb, grid } = themeColors();
-  const payload = meta?.chart_payload || {};
-  const yTrue = payload.y_true || [];
-  const yPred = payload.y_pred || [];
-  const pts = yTrue.map((y, i) => ({ x: y, y: yPred[i] ?? null })).filter(p => p.y != null);
-  const ctx = document.getElementById('chartActualPred');
-  window.chartDestroy(chart1);
-  chart1 = new Chart(ctx, {
-    type: 'scatter',
-    data: { datasets: [{ label: 'Pred vs Actual', data: pts, backgroundColor: `rgba(${primaryRgb},0.72)` }] },
+function buildSeriesChart(canvasId, title, labels, values, yLabel, color) {
+  const { grid } = themeColors();
+  const ctx = getChartCanvas(canvasId);
+  if (!ctx) return null;
+  return registerChart(canvasId, new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: title,
+        data: values,
+        borderColor: color,
+        backgroundColor: color.replace('0.85', '0.12').replace('0.8', '0.12'),
+        tension: 0.25,
+        fill: true,
+        pointRadius: values.length > 100 ? 0 : 2
+      }]
+    },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true } },
+      plugins: { tooltip: { enabled: true }, title: { display: true, text: title } },
       scales: {
-        x: { title: { display: true, text: 'Actual' }, grid: { color: grid } },
-        y: { title: { display: true, text: 'Predicted' }, grid: { color: grid } }
+        x: { title: { display: true, text: 'Sample' }, grid: { display: false } },
+        y: { title: { display: true, text: yLabel }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
-function renderResiduals(meta) {
-  const { grid } = themeColors();
+function renderActualPred(meta) {
   const payload = meta?.chart_payload || {};
-  const residuals = payload.residuals || [];
-  const bins = 18;
-  if (residuals.length === 0) return;
-  const min = Math.min(...residuals);
-  const max = Math.max(...residuals);
-  const step = (max - min) / bins || 1;
-  const counts = new Array(bins).fill(0);
-  residuals.forEach(r => {
-    const idx = Math.max(0, Math.min(bins - 1, Math.floor((r - min) / step)));
-    counts[idx] += 1;
-  });
-  const labels = counts.map((_, i) => `${(min + i * step).toFixed(1)}–${(min + (i + 1) * step).toFixed(1)}`);
-  const ctx = document.getElementById('chartResiduals');
-  window.chartDestroy(chart2);
-  chart2 = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets: [{ label: 'Residuals', data: counts, backgroundColor: 'rgba(116,83,255,0.65)' }] },
-    options: {
-      responsive: true,
-      plugins: { tooltip: { enabled: true } },
-      scales: { x: { grid: { display: false } }, y: { grid: { color: grid }, title: { display: true, text: 'Count' } } }
-    }
-  });
+  const labels = payload.actual_labels || [];
+  const task = meta?.task || payload.task || 'regression';
+  const actualTitle = task === 'classification' ? 'Actual class labels' : 'Actual demand';
+  const predTitle = task === 'classification' ? 'Predicted class labels' : 'Predicted demand';
+  buildSeriesChart('chartActualSeries', actualTitle, labels, payload.actual_series || [], task === 'classification' ? 'Class' : 'Demand', 'rgba(14,165,233,0.85)');
+  buildSeriesChart('chartPredSeries', predTitle, labels, payload.predicted_series || [], task === 'classification' ? 'Class' : 'Demand', 'rgba(249,115,22,0.85)');
 }
 
 function renderLearningCurve(diag) {
   const { primary, primaryRgb, grid } = themeColors();
   const lc = diag?.learning_curve_r2 || {};
   const sizes = lc.train_sizes || [];
-  const train = lc.train_scores || [];
-  const val = lc.val_scores || [];
-  const ctx = document.getElementById('chartLearningCurve');
-  window.chartDestroy(chartLc);
-  if (!sizes.length) {
-    chartLc = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: lc.note || 'Learning curve not available' } } } });
-    return;
-  }
-  chartLc = new Chart(ctx, {
+  const ctx = getChartCanvas('chartLearningCurve');
+  if (!ctx) return;
+  registerChart('chartLearningCurve', new Chart(ctx, {
     type: 'line',
     data: {
       labels: sizes.map(s => String(s)),
       datasets: [
-        { label: 'Train R²', data: train, borderColor: primary, backgroundColor: `rgba(${primaryRgb},0.10)`, tension: 0.25 },
-        { label: 'Validation R²', data: val, borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.10)', tension: 0.25 },
+        { label: `Train ${lc.label || 'Score'}`, data: lc.train_scores || [], borderColor: primary, backgroundColor: `rgba(${primaryRgb},0.10)`, tension: 0.25 },
+        { label: `Validation ${lc.label || 'Score'}`, data: lc.val_scores || [], borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.10)', tension: 0.25 },
       ]
     },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Learning curve (R²)' } },
+      plugins: { title: { display: true, text: lc.label ? `Training curve (${lc.label})` : 'Training curve' } },
       scales: {
         x: { title: { display: true, text: 'Training samples' }, grid: { display: false } },
-        y: { title: { display: true, text: 'R² score' }, grid: { color: grid } }
+        y: { title: { display: true, text: lc.label || 'Score' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
 function renderLearningCurveRmse(diag) {
   const { primaryRgb, grid } = themeColors();
   const lc = diag?.learning_curve_rmse || {};
-  const sizes = lc.train_sizes || [];
-  const train = lc.train_scores || [];
-  const val = lc.val_scores || [];
-  const ctx = document.getElementById('chartLearningCurveRmse');
-  window.chartDestroy(chartLcRmse);
-  if (!sizes.length) {
-    chartLcRmse = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: lc.note || 'Learning curve not available' } } } });
-    return;
-  }
-  chartLcRmse = new Chart(ctx, {
+  const ctx = getChartCanvas('chartLearningCurveRmse');
+  if (!ctx) return;
+  registerChart('chartLearningCurveRmse', new Chart(ctx, {
     type: 'line',
     data: {
-      labels: sizes.map(s => String(s)),
+      labels: (lc.train_sizes || []).map(s => String(s)),
       datasets: [
-        { label: 'Train RMSE', data: train, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.25 },
-        { label: 'Validation RMSE', data: val, borderColor: `rgba(${primaryRgb},0.78)`, backgroundColor: `rgba(${primaryRgb},0.08)`, tension: 0.25 },
+        { label: `Train ${lc.label || 'Score'}`, data: lc.train_scores || [], borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.10)', tension: 0.25 },
+        { label: `Validation ${lc.label || 'Score'}`, data: lc.val_scores || [], borderColor: `rgba(${primaryRgb},0.78)`, backgroundColor: `rgba(${primaryRgb},0.08)`, tension: 0.25 },
       ]
     },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Learning curve (RMSE)' } },
+      plugins: { title: { display: true, text: lc.label ? `Training curve (${lc.label})` : 'Training curve' } },
       scales: {
         x: { title: { display: true, text: 'Training samples' }, grid: { display: false } },
-        y: { title: { display: true, text: 'RMSE' }, grid: { color: grid } }
+        y: { title: { display: true, text: lc.label || 'Score' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
 function renderLearningCurveMae(diag) {
   const { grid } = themeColors();
   const lc = diag?.learning_curve_mae || {};
-  const sizes = lc.train_sizes || [];
-  const train = lc.train_scores || [];
-  const val = lc.val_scores || [];
-  const ctx = document.getElementById('chartLearningCurveMae');
-  window.chartDestroy(chartLcMae);
-  if (!sizes.length) {
-    chartLcMae = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: lc.note || 'Learning curve not available' } } } });
-    return;
-  }
-  chartLcMae = new Chart(ctx, {
+  const ctx = getChartCanvas('chartLearningCurveMae');
+  if (!ctx) return;
+  registerChart('chartLearningCurveMae', new Chart(ctx, {
     type: 'line',
     data: {
-      labels: sizes.map(s => String(s)),
+      labels: (lc.train_sizes || []).map(s => String(s)),
       datasets: [
-        { label: 'Train MAE', data: train, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.10)', tension: 0.25 },
-        { label: 'Validation MAE', data: val, borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,0.08)', tension: 0.25 },
+        { label: `Train ${lc.label || 'Score'}`, data: lc.train_scores || [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.10)', tension: 0.25 },
+        { label: `Validation ${lc.label || 'Score'}`, data: lc.val_scores || [], borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,0.08)', tension: 0.25 },
       ]
     },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Learning curve (MAE)' } },
+      plugins: { title: { display: true, text: lc.label ? `Training curve (${lc.label})` : 'Training curve' } },
       scales: {
         x: { title: { display: true, text: 'Training samples' }, grid: { display: false } },
-        y: { title: { display: true, text: 'MAE' }, grid: { color: grid } }
+        y: { title: { display: true, text: lc.label || 'Score' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
 function renderCvScores(diag) {
   const { grid } = themeColors();
   const cv = diag?.cross_validation || {};
-  const folds = cv.folds || 0;
-  const r2 = cv.r2_scores || [];
-  const rmse = cv.rmse_scores || [];
-  const labels = r2.length ? r2.map((_, i) => `Fold ${i + 1}`) : (rmse.length ? rmse.map((_, i) => `Fold ${i + 1}`) : []);
-  const ctx = document.getElementById('chartCvScores');
-  window.chartDestroy(chartCv);
-  if (!labels.length) {
-    chartCv = new Chart(ctx, { type: 'bar', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: 'CV scores not available' } } } });
-    return;
-  }
-  chartCv = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: `R² (CV${folds || ''})`, data: r2, backgroundColor: 'rgba(22,163,74,0.60)' },
-        { label: `RMSE (CV${folds || ''})`, data: rmse, backgroundColor: 'rgba(239,68,68,0.50)' },
+  const isClassification = diag?.task === 'classification';
+  const labels = isClassification
+    ? (cv.accuracy_scores || []).map((_, i) => `Fold ${i + 1}`)
+    : (cv.r2_scores || []).map((_, i) => `Fold ${i + 1}`);
+  const datasets = isClassification
+    ? [
+        { label: 'Accuracy', data: cv.accuracy_scores || [], backgroundColor: 'rgba(22,163,74,0.60)' },
+        { label: 'F1 weighted', data: cv.f1_weighted_scores || [], backgroundColor: 'rgba(249,115,22,0.55)' },
+        { label: 'Precision weighted', data: cv.precision_weighted_scores || [], backgroundColor: 'rgba(14,165,233,0.50)' },
       ]
-    },
+    : [
+        { label: 'R²', data: cv.r2_scores || [], backgroundColor: 'rgba(22,163,74,0.60)' },
+        { label: 'RMSE', data: cv.rmse_scores || [], backgroundColor: 'rgba(239,68,68,0.50)' },
+      ];
+  const ctx = getChartCanvas('chartCvScores');
+  if (!ctx) return;
+  registerChart('chartCvScores', new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Cross-validation scores' } },
+      plugins: { title: { display: true, text: `Cross-validation scores (${cv.folds || 10} folds)` } },
       scales: { x: { grid: { display: false } }, y: { grid: { color: grid }, title: { display: true, text: 'Score' } } }
     }
-  });
+  }));
 }
 
 function renderRocAuc(diag) {
   const { primaryRgb, grid } = themeColors();
   const roc = diag?.high_demand_roc || {};
-  const ctx = document.getElementById('chartRocAuc');
-  window.chartDestroy(chartRoc);
-  if (!roc.available || !(roc.points || []).length) {
-    chartRoc = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [] }, options: { plugins: { title: { display: true, text: 'ROC not available' } } } });
-    return;
-  }
   const pts = roc.points || [];
-  chartRoc = new Chart(ctx, {
+  const ctx = getChartCanvas('chartRocAuc');
+  if (!ctx) return;
+  registerChart('chartRocAuc', new Chart(ctx, {
     type: 'line',
     data: {
       datasets: [
@@ -295,17 +294,17 @@ function renderRocAuc(diag) {
     },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: `ROC curve (High demand) • AUC ${Number(roc.auc || 0).toFixed(3)}` } },
+      plugins: { title: { display: true, text: `ROC curve • AUC ${Number(roc.auc || 0).toFixed(3)}` } },
       scales: {
         x: { type: 'linear', min: 0, max: 1, title: { display: true, text: 'False positive rate' }, grid: { color: grid } },
         y: { min: 0, max: 1, title: { display: true, text: 'True positive rate' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
 function renderHighDemandMetrics(diag) {
-  const el = document.getElementById('highDemandMetrics');
+  const el = byId('highDemandMetrics');
   if (!el) return;
   const m = diag?.high_demand_metrics || {};
   if (!m.available) {
@@ -315,12 +314,14 @@ function renderHighDemandMetrics(diag) {
   const cm = m.confusion_matrix || [[0, 0], [0, 0]];
   el.innerHTML = `
     <div class="row g-2">
-      <div class="col-6"><span class="text-muted">Threshold:</span> ${Number(m.threshold).toFixed(3)}</div>
-      <div class="col-6"><span class="text-muted">Accuracy:</span> ${Number(m.accuracy).toFixed(3)}</div>
-      <div class="col-6"><span class="text-muted">Precision:</span> ${Number(m.precision).toFixed(3)}</div>
-      <div class="col-6"><span class="text-muted">Recall:</span> ${Number(m.recall).toFixed(3)}</div>
-      <div class="col-6"><span class="text-muted">F1:</span> ${Number(m.f1).toFixed(3)}</div>
-      <div class="col-6"><span class="text-muted">F1 (weighted):</span> ${Number(m.f1_weighted).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Accuracy:</span> ${Number(m.accuracy || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Precision micro:</span> ${Number(m.precision_micro || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Precision weighted:</span> ${Number(m.precision_weighted || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Recall micro:</span> ${Number(m.recall_micro || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Recall weighted:</span> ${Number(m.recall_weighted || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">F1 micro:</span> ${Number(m.f1_micro || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">F1 weighted:</span> ${Number(m.f1_weighted || 0).toFixed(3)}</div>
+      <div class="col-6"><span class="text-muted">Decision:</span> ${m.decision_mean != null ? Number(m.decision_mean).toFixed(3) : '—'}</div>
     </div>
     <div class="mt-2">
       <div class="text-uppercase text-muted small" style="letter-spacing:.06em">Confusion matrix</div>
@@ -340,68 +341,114 @@ function renderHighDemandMetrics(diag) {
 function renderResidualVsPred(diag) {
   const { grid } = themeColors();
   const rp = diag?.residuals_vs_pred || {};
-  const pts = rp.points || [];
-  const ctx = document.getElementById('chartResidualVsPred');
-  window.chartDestroy(chartRvP);
-  chartRvP = new Chart(ctx, {
+  const ctx = getChartCanvas('chartResidualVsPred');
+  if (!ctx) return;
+  registerChart('chartResidualVsPred', new Chart(ctx, {
     type: 'scatter',
-    data: { datasets: [{ label: 'Residuals', data: pts, backgroundColor: 'rgba(239,68,68,0.55)' }] },
+    data: { datasets: [{ label: 'Residuals', data: rp.points || [], backgroundColor: 'rgba(239,68,68,0.55)' }] },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Residuals vs Predicted' } },
+      plugins: { title: { display: true, text: diag?.task === 'classification' ? 'Decision profile' : 'Residuals vs predicted' } },
       scales: {
         x: { title: { display: true, text: rp.x_label || 'Predicted' }, grid: { color: grid } },
         y: { title: { display: true, text: rp.y_label || 'Residual' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
 function renderImportance(diag) {
   const { primaryRgb, grid } = themeColors();
   const imp = diag?.feature_importance || {};
-  const labels = imp.labels || [];
-  const values = imp.values || [];
-  const ctx = document.getElementById('chartImportance');
-  window.chartDestroy(chartImp);
-  chartImp = new Chart(ctx, {
+  const ctx = getChartCanvas('chartImportance');
+  if (!ctx) return;
+  registerChart('chartImportance', new Chart(ctx, {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'Importance', data: values, backgroundColor: `rgba(${primaryRgb},0.70)` }] },
+    data: { labels: imp.labels || [], datasets: [{ label: 'Importance', data: imp.values || [], backgroundColor: `rgba(${primaryRgb},0.70)` }] },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: `Feature importance (${imp.method || 'n/a'})` }, legend: { display: false } },
+      plugins: { title: { display: true, text: `Feature importance (${imp.method || 'n/a'})` }, legend: { display: false } },
       scales: {
         x: { title: { display: true, text: 'Feature' }, grid: { display: false }, ticks: { maxRotation: 25, minRotation: 0 } },
         y: { title: { display: true, text: 'Relative importance' }, grid: { color: grid } }
       }
     }
-  });
+  }));
 }
 
-function renderScoreComparison() {
-  const ctx = document.getElementById('chartScoreCompare');
-  const labels = models.map(m => `#${m.id} ${m.model_name}`);
-  const r2 = models.map(m => Number(m.r2_score));
-  const rmse = models.map(m => Number(m.rmse));
-  window.chartDestroy(chartCompare);
-  chartCompare = new Chart(ctx, {
-    type: 'bar',
+function renderSharedNonShared(diag) {
+  const el = byId('sharedNonSharedPanel');
+  if (!el) return;
+  const data = diag?.shared_nonshared || {};
+  if (!data.available) {
+    el.textContent = 'No shared/non-shared breakdown detected in this dataset.';
+    return;
+  }
+  el.innerHTML = `
+    <div class="row g-3">
+      <div class="col-12 col-lg-3">
+        <div class="panel-soft p-3 h-100">
+          <div class="text-muted small">${window.escapeHtml(data.left_label)}</div>
+          <div class="h5 mb-1">${Number(data.left_total || 0).toFixed(1)}</div>
+          <div class="small text-muted">Average ${Number(data.left_avg || 0).toFixed(2)}</div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-3">
+        <div class="panel-soft p-3 h-100">
+          <div class="text-muted small">${window.escapeHtml(data.right_label)}</div>
+          <div class="h5 mb-1">${Number(data.right_total || 0).toFixed(1)}</div>
+          <div class="small text-muted">Average ${Number(data.right_avg || 0).toFixed(2)}</div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <canvas id="chartSharedNonShared"></canvas>
+      </div>
+    </div>
+  `;
+  const { grid } = themeColors();
+  const ctx = getChartCanvas('chartSharedNonShared');
+  if (!ctx) return;
+  registerChart('chartSharedNonShared', new Chart(ctx, {
+    type: 'line',
     data: {
-      labels,
+      labels: data.labels || [],
       datasets: [
-        { label: 'R²', data: r2, backgroundColor: 'rgba(22,163,74,0.60)' },
-        { label: 'RMSE', data: rmse, backgroundColor: 'rgba(239,68,68,0.55)' },
+        { label: data.left_label, data: data.left_values || [], borderColor: 'rgba(22,163,74,0.85)', backgroundColor: 'rgba(22,163,74,0.10)', tension: 0.25, fill: true, pointRadius: 0 },
+        { label: data.right_label, data: data.right_values || [], borderColor: 'rgba(249,115,22,0.85)', backgroundColor: 'rgba(249,115,22,0.08)', tension: 0.25, fill: true, pointRadius: 0 },
       ]
     },
     options: {
       responsive: true,
-      plugins: { tooltip: { enabled: true }, title: { display: true, text: 'Model comparison (R² and RMSE)' } },
+      plugins: { title: { display: true, text: `${data.left_label} vs ${data.right_label}` } },
       scales: {
-        x: { title: { display: true, text: 'Models' }, grid: { display: false } },
-        y: { title: { display: true, text: 'Score' }, grid: { color: 'rgba(2,6,23,0.08)' } }
+        x: { title: { display: true, text: 'Sample' }, grid: { display: false } },
+        y: { title: { display: true, text: 'Bike count' }, grid: { color: grid } }
       }
     }
-  });
+  }));
+}
+
+function renderScoreComparison() {
+  const ctx = getChartCanvas('chartScoreCompare');
+  if (!ctx) return;
+  const labels = models.map(m => `#${m.id} ${m.model_name}`);
+  const primary = models.map(m => Number(m.primary_metric_value ?? m.r2_score ?? 0));
+  const secondary = models.map(m => Number(m.secondary_metric_value ?? m.adjusted_r2 ?? 0));
+  registerChart('chartScoreCompare', new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: models[0]?.primary_metric_name || 'Primary score', data: primary, backgroundColor: 'rgba(22,163,74,0.60)' },
+        { label: models[0]?.secondary_metric_name || 'Secondary score', data: secondary, backgroundColor: 'rgba(239,68,68,0.55)' },
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { title: { display: true, text: 'Model comparison' } },
+      scales: { x: { grid: { display: false } }, y: { title: { display: true, text: 'Score' }, grid: { color: 'rgba(2,6,23,0.08)' } } }
+    }
+  }));
 }
 
 async function loadDiagnostics(modelId) {
@@ -419,6 +466,7 @@ async function loadDiagnostics(modelId) {
   renderCvScores(diag);
   renderRocAuc(diag);
   renderHighDemandMetrics(diag);
+  renderSharedNonShared(diag);
 }
 
 async function loadModelMetrics(modelId) {
@@ -431,11 +479,10 @@ async function loadModelMetrics(modelId) {
   const model = res.data.model || {};
   renderMetricStrip(model, meta);
   renderActualPred(meta);
-  renderResiduals(meta);
 }
 
 async function loadModelInsights(modelId) {
-  const el = document.getElementById('modelInsights');
+  const el = byId('modelInsights');
   if (!el) return;
   const res = await window.apiGet(`/api/dashboard/insights/${modelId}`);
   if (!res.success) {
@@ -446,10 +493,8 @@ async function loadModelInsights(modelId) {
   const insights = d.insights?.insights || [];
   const importances = d.factor_importances || [];
   const corrs = d.correlations || [];
-
   const impRows = importances.slice(0, 10).map(i => `<tr><td>${window.escapeHtml(i.feature)}</td><td>${(Number(i.importance) * 100).toFixed(1)}%</td></tr>`).join('');
   const corrRows = corrs.slice(0, 8).map(c => `<tr><td>${window.escapeHtml(c.feature)}</td><td>${Number(c.corr).toFixed(2)}</td></tr>`).join('');
-
   el.innerHTML = `
     <div class="row g-3">
       <div class="col-12 col-lg-5">
@@ -482,13 +527,68 @@ async function loadModelInsights(modelId) {
   `;
 }
 
+function setupFullscreenButtons() {
+  const modalEl = byId('chartFullscreenModal');
+  if (!modalEl || typeof bootstrap === 'undefined') return;
+  const modal = new bootstrap.Modal(modalEl);
+  document.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-chart-target]');
+    if (!btn) return;
+    const target = btn.getAttribute('data-chart-target');
+    const source = chartRefs[target];
+    if (!source) return;
+    fullscreenTargetId = target;
+    const title = btn.closest('.card-body, .p-3, .border')?.querySelector('.h6')?.textContent || 'Chart';
+    const titleEl = byId('chartFullscreenTitle');
+    if (titleEl) titleEl.textContent = title;
+    modal.show();
+  });
+  modalEl.addEventListener('shown.bs.modal', () => {
+    if (!fullscreenTargetId) return;
+    const source = chartRefs[fullscreenTargetId];
+    if (!source) return;
+    if (fullscreenChart) {
+      window.chartDestroy(fullscreenChart);
+      fullscreenChart = null;
+    }
+    const ctx = getChartCanvas('chartFullscreenCanvas');
+    if (!ctx) return;
+    const cloned = cloneChartConfig(source);
+    cloned.options = cloned.options || {};
+    cloned.options.responsive = true;
+    cloned.options.maintainAspectRatio = false;
+    fullscreenChart = new Chart(ctx, cloned);
+  });
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    if (fullscreenChart) {
+      window.chartDestroy(fullscreenChart);
+      fullscreenChart = null;
+    }
+    fullscreenTargetId = null;
+  });
+}
+
+function cloneChartConfig(chart) {
+  return {
+    type: chart.config.type,
+    data: {
+      labels: Array.isArray(chart.data?.labels) ? [...chart.data.labels] : chart.data?.labels,
+      datasets: (chart.data?.datasets || []).map(ds => ({
+        ...ds,
+        data: Array.isArray(ds.data) ? ds.data.map(point => (
+          point && typeof point === 'object' ? { ...point } : point
+        )) : ds.data,
+      })),
+    },
+    options: JSON.parse(JSON.stringify(chart.options || {})),
+  };
+}
+
 (async function setupAiSummary() {
-  const btn = document.getElementById('aiGenerateBtn');
+  const btn = byId('aiGenerateBtn');
   if (!btn) return;
-
-  const out = document.getElementById('aiSummary');
-  const contextEl = document.getElementById('aiContext');
-
+  const out = byId('aiSummary');
+  const contextEl = byId('aiContext');
   async function refreshCached() {
     if (!out) return;
     if (!currentModelId) { out.textContent = 'Select a model, then click Generate.'; return; }
@@ -497,12 +597,10 @@ async function loadModelInsights(modelId) {
       out.textContent = 'Gemini is not configured. Set GEMINI_API_KEY in .env to enable AI summaries.';
       return;
     }
-    // This endpoint returns cached summary when present (force=false)
     const cached = await window.apiPostJson(`/api/ai/summary/${currentModelId}`, { force: false });
     if (cached.success && cached.data?.summary_text) out.textContent = cached.data.summary_text;
     else out.textContent = 'No AI summary yet. Click Generate.';
   }
-
   btn.addEventListener('click', async () => {
     window.clearGlobalAlert();
     if (!currentModelId) {
@@ -520,19 +618,18 @@ async function loadModelInsights(modelId) {
     if (out) out.textContent = res.data?.summary_text || '—';
     window.setGlobalAlert('success', res.message || 'AI summary generated.');
   });
-
-  // expose for model selection changes
   window.__refreshAiSummary = refreshCached;
 })();
 
 (async () => {
+  setupFullscreenButtons();
   window.clearGlobalAlert();
   const res = await window.apiGet('/api/models');
   if (!res.success) {
     window.setGlobalAlert('danger', res.message || 'Failed to load models.');
     return;
   }
-  models = (res.data || []).sort((a, b) => Number(b.r2_score) - Number(a.r2_score));
+  models = (res.data || []).sort((a, b) => metricValue(b, 'primary_metric_value') - metricValue(a, 'primary_metric_value'));
   renderModelsTable();
   populatePicker();
   renderScoreComparison();
@@ -541,7 +638,8 @@ async function loadModelInsights(modelId) {
     const activeModelId = state?.data?.active_model_id;
     const chosen = activeModelId || models[0].id;
     currentModelId = Number(chosen);
-    document.getElementById('modelPicker').value = String(chosen);
+    const picker = byId('modelPicker');
+    if (picker) picker.value = String(chosen);
     await loadModelMetrics(chosen);
     await loadModelInsights(chosen);
     await loadDiagnostics(chosen);
@@ -549,13 +647,16 @@ async function loadModelInsights(modelId) {
   }
 })();
 
-document.getElementById('modelPicker').addEventListener('change', async (e) => {
-  const id = e.target.value;
-  if (!id) return;
-  currentModelId = Number(id);
-  await window.apiPostJson('/api/state', { active_model_id: Number(id) });
-  await loadModelMetrics(id);
-  await loadModelInsights(id);
-  await loadDiagnostics(id);
-  if (window.__refreshAiSummary) await window.__refreshAiSummary();
-});
+const modelPicker = byId('modelPicker');
+if (modelPicker) {
+  modelPicker.addEventListener('change', async (e) => {
+    const id = e.target.value;
+    if (!id) return;
+    currentModelId = Number(id);
+    await window.apiPostJson('/api/state', { active_model_id: Number(id) });
+    await loadModelMetrics(id);
+    await loadModelInsights(id);
+    await loadDiagnostics(id);
+    if (window.__refreshAiSummary) await window.__refreshAiSummary();
+  });
+}

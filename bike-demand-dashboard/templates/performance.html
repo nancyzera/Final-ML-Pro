@@ -22,8 +22,11 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Actual vs Predicted</div>
-          <canvas id="chartActualPred"></canvas>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Actual values</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartActualSeries">Full screen</button>
+          </div>
+          <canvas id="chartActualSeries"></canvas>
         </div>
       </div>
     </div>
@@ -31,8 +34,11 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Residual distribution</div>
-          <canvas id="chartResiduals"></canvas>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Predicted values</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartPredSeries">Full screen</button>
+          </div>
+          <canvas id="chartPredSeries"></canvas>
         </div>
       </div>
     </div>
@@ -45,43 +51,64 @@
           <div class="row g-3">
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Learning curve (R²)</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Training curve (primary score)</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartLearningCurve">Full screen</button>
+                </div>
                 <canvas id="chartLearningCurve"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Learning curve (RMSE)</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Training curve (secondary score)</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartLearningCurveRmse">Full screen</button>
+                </div>
                 <canvas id="chartLearningCurveRmse"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Learning curve (MAE)</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Training curve (precision / error)</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartLearningCurveMae">Full screen</button>
+                </div>
                 <canvas id="chartLearningCurveMae"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Residuals vs predicted</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Residuals / decision profile</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartResidualVsPred">Full screen</button>
+                </div>
                 <canvas id="chartResidualVsPred"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Feature importance (top)</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Feature importance</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartImportance">Full screen</button>
+                </div>
                 <canvas id="chartImportance"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Cross-validation scores</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">10-fold cross-validation</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartCvScores">Full screen</button>
+                </div>
                 <canvas id="chartCvScores"></canvas>
               </div>
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">ROC curve (High demand) • AUC</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Area under the curve (AUC)</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartRocAuc">Full screen</button>
+                </div>
                 <canvas id="chartRocAuc"></canvas>
               </div>
             </div>
@@ -93,8 +120,17 @@
             </div>
             <div class="col-12 col-lg-6">
               <div class="p-3 rounded-4 border">
-                <div class="h6 mb-2">Model scores (comparison)</div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <div class="h6 mb-0">Model scores</div>
+                  <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartScoreCompare">Full screen</button>
+                </div>
                 <canvas id="chartScoreCompare"></canvas>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="p-3 rounded-4 border">
+                <div class="h6 mb-3">Shared and non-shared bike view</div>
+                <div id="sharedNonSharedPanel" class="text-muted small">No shared/non-shared breakdown detected in this dataset.</div>
               </div>
             </div>
           </div>
@@ -126,6 +162,22 @@
           </div>
           <div class="text-muted small mb-2">Uses your `GEMINI_API_KEY` to summarize performance and explain demand drivers. Output is stored and added to the HTML report.</div>
           <div id="aiSummary" class="text-muted">Select a model, then click Generate.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="chartFullscreenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="chartFullscreenTitle">Chart</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div style="position:relative; min-height: 70vh;">
+            <canvas id="chartFullscreenCanvas"></canvas>
+          </div>
         </div>
       </div>
     </div>

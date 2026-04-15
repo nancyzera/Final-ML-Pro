@@ -6,7 +6,7 @@ from models.ai_summary import AiSummary
 from models.database import db
 from models.dataset_model import UploadedDataset
 from models.trained_model import TrainedModel
-from services.ai_summary_service import build_ai_context, build_prompt
+from services.ai_summary_service import build_ai_context, build_local_summary, build_prompt, is_low_signal_response
 from services.gemini_service import GeminiError, generate_text
 from services.gemini_service import list_models as gemini_list_models
 
@@ -16,14 +16,16 @@ ai_bp = Blueprint("ai_bp", __name__, url_prefix="/api/ai")
 
 @ai_bp.get("/status")
 def status():
-    enabled = bool(current_app.config.get("GEMINI_API_KEY"))
+    enabled = True
+    has_api = bool(current_app.config.get("GEMINI_API_KEY"))
     return jsonify(
         {
             "success": True,
             "data": {
                 "enabled": enabled,
-                "provider": "gemini",
-                "model": current_app.config.get("GEMINI_MODEL") or "gemini-1.5-flash",
+                "provider": "gemini" if has_api else "local",
+                "model": current_app.config.get("GEMINI_MODEL") or "gemini-2.5-flash",
+                "fallback_mode": not has_api,
             },
         }
     )
@@ -70,32 +72,50 @@ def summarize_model(model_id: int):
     locale_context = (body.get("context") or "").strip()
     force = bool(body.get("force", False))
 
-    # Return cached summary unless forced
+    ctx = build_ai_context(dataset_row=dataset, model_row=model)
+    prompt = build_prompt(ctx=ctx, locale_context=locale_context or "Kigali, Rwanda")
+
+    # Return cached summary unless forced, but only when it matches this prompt and is not low-signal.
     if not force:
         cached = (
-            AiSummary.query.filter_by(model_id=model.id, provider="gemini")
+            AiSummary.query.filter_by(model_id=model.id, provider="gemini", prompt=prompt)
             .order_by(AiSummary.created_at.desc())
             .first()
         )
         if cached:
-            return jsonify(
-                {
-                    "success": True,
-                    "message": "AI summary loaded.",
-                    "data": {"summary_text": cached.response_text, "created_at": cached.created_at.isoformat()},
-                }
-            )
+            cached_text = str(cached.response_text or "").strip()
+            if is_low_signal_response(cached_text):
+                db.session.delete(cached)
+                db.session.commit()
+            else:
+                return jsonify(
+                    {
+                        "success": True,
+                        "message": "AI summary loaded.",
+                        "data": {"summary_text": cached.response_text, "created_at": cached.created_at.isoformat()},
+                    }
+                )
 
     api_key = current_app.config.get("GEMINI_API_KEY") or ""
-    gem_model = current_app.config.get("GEMINI_MODEL") or "gemini-1.5-flash"
-    if not api_key:
-        return jsonify({"success": False, "message": "Gemini is not configured. Set GEMINI_API_KEY in .env."}), 400
+    gem_model = current_app.config.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    local_summary = build_local_summary(ctx=ctx, locale_context=locale_context or "Kigali, Rwanda")
 
-    ctx = build_ai_context(dataset_row=dataset, model_row=model)
-    prompt = build_prompt(ctx=ctx, locale_context=locale_context or "Kigali, Rwanda")
+    if not api_key:
+        row = AiSummary(model_id=model.id, provider="gemini", model_name="local-summary", prompt=prompt, response_text=local_summary)
+        db.session.add(row)
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "message": "Local summary generated.",
+                "data": {"summary_text": local_summary, "created_at": row.created_at.isoformat()},
+            }
+        )
 
     try:
         text = generate_text(api_key=api_key, model=gem_model, prompt=prompt)
+        if is_low_signal_response(text):
+            text = local_summary
         row = AiSummary(model_id=model.id, provider="gemini", model_name=gem_model, prompt=prompt, response_text=text)
         db.session.add(row)
         db.session.commit()
@@ -107,6 +127,15 @@ def summarize_model(model_id: int):
             }
         )
     except GeminiError as e:
-        return jsonify({"success": False, "message": str(e)}), 400
+        row = AiSummary(model_id=model.id, provider="gemini", model_name=f"{gem_model} (fallback)", prompt=prompt, response_text=local_summary)
+        db.session.add(row)
+        db.session.commit()
+        return jsonify(
+            {
+                "success": True,
+                "message": f"Gemini was unavailable, so a local summary was generated instead. {e}",
+                "data": {"summary_text": local_summary, "created_at": row.created_at.isoformat()},
+            }
+        )
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500

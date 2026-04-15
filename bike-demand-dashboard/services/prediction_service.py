@@ -26,6 +26,23 @@ def predict_from_inputs(model_path: str, inputs: Dict[str, Any], feature_columns
 
     pred = float(np.ravel(pipeline.predict(X))[0])
     details = {"model_path": model_path}
+    if hasattr(pipeline, "predict_proba"):
+        try:
+            proba = pipeline.predict_proba(X)
+            arr = np.asarray(proba, dtype=float)
+            if arr.ndim == 2 and arr.shape[1] >= 2:
+                details["predicted_probability"] = float(arr[0, 1])
+            elif arr.ndim >= 1:
+                details["predicted_probability"] = float(arr.ravel()[0])
+        except Exception:
+            pass
+    if hasattr(pipeline, "decision_function"):
+        try:
+            score = np.asarray(pipeline.decision_function(X), dtype=float).ravel()
+            if score.size:
+                details["decision_score"] = float(score[0])
+        except Exception:
+            pass
     return pred, details
 
 
@@ -34,4 +51,3 @@ def _try_float(value: str):
         return float(value)
     except Exception:
         return None
-

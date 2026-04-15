@@ -44,21 +44,32 @@ def _supports_generate_content(model_obj: Dict[str, Any]) -> bool:
 def _pick_model_from_list(models_json: Dict[str, Any], preferred: str) -> str:
     preferred = _strip_model_prefix(preferred)
     models = models_json.get("models") or []
+    preferred_flash_order = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+    ]
     # 1) preferred exact match
     for m in models:
         name = _strip_model_prefix(m.get("name") or "")
         if name == preferred and _supports_generate_content(m):
             return name
-    # 2) prefer "flash" for speed/cost
+    # 2) prefer a stable flash family in explicit order
+    for candidate in preferred_flash_order:
+        for m in models:
+            name = _strip_model_prefix(m.get("name") or "")
+            if name == candidate and _supports_generate_content(m):
+                return name
+    # 3) otherwise prefer any "flash" model for speed/cost
     flash = [m for m in models if _supports_generate_content(m) and "flash" in str(m.get("name", "")).lower()]
     if flash:
         return _strip_model_prefix(flash[0].get("name") or "")
-    # 3) any model supporting generateContent
+    # 4) any model supporting generateContent
     supported = [m for m in models if _supports_generate_content(m)]
     if supported:
         return _strip_model_prefix(supported[0].get("name") or "")
-    # 4) fallback to preferred (even if unsupported)
-    return preferred or "gemini-1.5-flash-latest"
+    # 5) fallback to preferred (even if unsupported)
+    return preferred or "gemini-2.5-flash"
 
 
 def generate_text(
@@ -78,14 +89,14 @@ def generate_text(
     if not api_key:
         raise GeminiError("GEMINI_API_KEY is not configured.")
     if not model:
-        model = "gemini-1.5-flash"
+        model = "gemini-2.5-flash"
 
     try:
         import requests
     except Exception as e:  # pragma: no cover
         raise GeminiError(f"Missing dependency 'requests': {e}")
 
-    model = _strip_model_prefix(model) or "gemini-1.5-flash-latest"
+    model = _strip_model_prefix(model) or "gemini-2.5-flash"
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     params = {"key": api_key}
     payload: Dict[str, Any] = {

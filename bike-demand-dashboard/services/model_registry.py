@@ -659,3 +659,14 @@ def get_estimator(model_name: str, params: Optional[Dict[str, Any]] = None, task
         return est
     raise ValueError("Unknown model name.")
 
+
+def get_model_spec(model_name: str) -> ModelSpec:
+    name = (model_name or "").strip()
+    for s in list_model_specs():
+        if s.name == name:
+            return s
+    raise ValueError("Unknown model name.")
+
+
+def get_model_task(model_name: str) -> str:
+    return get_model_spec(model_name).task

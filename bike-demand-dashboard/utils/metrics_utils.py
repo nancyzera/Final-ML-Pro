@@ -44,7 +44,7 @@ def regression_metrics(y_true, y_pred, n_features: int) -> Dict[str, float]:
     }
 
 
-def classification_metrics(y_true, y_pred, y_proba=None) -> Dict[str, float]:
+def classification_metrics(y_true, y_pred, y_proba=None, decision_scores=None) -> Dict[str, float]:
     """
     Returns common classification metrics. For multi-class, uses macro/micro/weighted averaging where relevant.
     If probabilities are provided, computes ROC-AUC when possible.
@@ -70,6 +70,14 @@ def classification_metrics(y_true, y_pred, y_proba=None) -> Dict[str, float]:
                 out["roc_auc_ovr_macro"] = _finite_or_default(
                     roc_auc_score(y_true, y_proba, multi_class="ovr", average="macro"), 0.0
                 )
+        except Exception:
+            pass
+
+    if decision_scores is not None:
+        try:
+            scores = np.asarray(decision_scores, dtype=float)
+            out["decision_mean"] = _finite_or_default(np.nanmean(scores), 0.0)
+            out["decision_abs_mean"] = _finite_or_default(np.nanmean(np.abs(scores)), 0.0)
         except Exception:
             pass
 

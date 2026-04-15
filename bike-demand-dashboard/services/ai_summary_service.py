@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+import re
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -86,6 +87,8 @@ Goal:
 Constraints:
 - Plain paragraphs only. No bullet points. No hashtags. No JSON.
 - Keep it readable for non-technical stakeholders.
+- Do not answer with yes/no only. Write at least 4 complete sentences.
+- Ground every claim in the provided metrics, factors, or correlations.
 - If you lack a location field, assume the deployment context is {loc}.
 
 Dataset:
@@ -107,6 +110,92 @@ correlations={factors.get('correlations')}
 """.strip()
 
 
+def is_low_signal_response(text: str) -> bool:
+    s = " ".join(str(text or "").strip().split())
+    if not s:
+        return True
+    if len(s) < 40:
+        return True
+    lowered = re.sub(r"[^a-z]+", " ", s.lower()).strip()
+    if lowered in {"yes", "no", "okay", "ok", "sure", "true", "false"}:
+        return True
+    tokens = [tok for tok in lowered.split() if tok]
+    if len(tokens) <= 4:
+        return True
+    return False
+
+
+def build_local_summary(*, ctx: Dict[str, Any], locale_context: str = "") -> str:
+    ds = ctx.get("dataset") or {}
+    m = ctx.get("model") or {}
+    factors = ctx.get("factors") or {}
+    training = ctx.get("training") or {}
+    task = str(training.get("task") or "regression")
+    loc = (locale_context or "").strip() or "the operating area"
+
+    sentences: List[str] = []
+    model_name = str(m.get("model_name") or "This model")
+    target = str(ds.get("target_column") or "demand")
+    rows = ds.get("rows_count")
+    cols = ds.get("columns_count")
+    missing = ds.get("missing_values")
+
+    if task == "classification":
+        accuracy = float(training.get("cross_validation", {}).get("accuracy_mean") or 0.0)
+        support = training.get("cross_validation", {}).get("rows_used") or rows
+        sentences.append(
+            f"{model_name} is being used as a classification model for {target}, based on about {int(support) if support else 'the available'} records, and its recent validation accuracy is {accuracy:.3f}."
+        )
+    else:
+        r2 = float(m.get("r2_score") or 0.0)
+        rmse = float(m.get("rmse") or 0.0)
+        quality = quality_label(r2)
+        shape = f"{int(rows)} rows and {int(cols)} columns" if rows and cols else "the uploaded dataset"
+        sentences.append(
+            f"{model_name} was trained on {shape} and currently shows {quality} predictive strength with R² {r2:.3f} and RMSE {rmse:.3f} for {target}."
+        )
+
+    if missing is not None:
+        sentences.append(
+            f"The dataset contains {int(missing)} missing values, so data quality is good enough for modeling but still worth monitoring before making planning decisions in {loc}."
+        )
+
+    top_factors = factors.get("top_factors") or []
+    corrs = factors.get("correlations") or []
+    if top_factors:
+        sentences.append(
+            f"The strongest model signals are coming from {', '.join(str(x) for x in top_factors[:4])}, which suggests these variables are driving most of the variation in observed demand."
+        )
+
+    if corrs:
+        strongest = corrs[0]
+        feature = strongest.get("feature") or "the strongest feature"
+        corr = float(strongest.get("corr") or 0.0)
+        direction = "higher" if corr > 0 else "lower"
+        sentences.append(
+            f"The clearest linear relationship in the raw data is {feature}, where {direction} values are associated with {target} changes with correlation {corr:.2f}; this is useful for planning, although it should not be treated as proof of causation."
+        )
+
+    cv = training.get("cross_validation") or {}
+    if cv.get("enabled"):
+        if task == "classification":
+            sentences.append(
+                f"Cross-validation is enabled, which means the classification scores are being checked across multiple folds instead of a single split, so the reported performance is more stable than a one-off test result."
+            )
+        else:
+            r2_mean = cv.get("r2_mean")
+            r2_std = cv.get("r2_std")
+            if r2_mean is not None and r2_std is not None:
+                sentences.append(
+                    f"Cross-validation shows an average R² of {float(r2_mean):.3f} with spread {float(r2_std):.3f}, so we can judge whether this model is consistent or still sensitive to the train-test split."
+                )
+
+    sentences.append(
+        f"The practical next step is to collect cleaner seasonal, weather, and calendar signals for {loc}, then compare whether the current feature set keeps the error low during peak-demand periods."
+    )
+    return " ".join(s.strip() for s in sentences if s and str(s).strip())
+
+
 def quality_label(r2: float) -> str:
     try:
         r2 = float(r2)
@@ -117,4 +206,3 @@ def quality_label(r2: float) -> str:
     if r2 >= 0.60:
         return "average"
     return "poor"
-

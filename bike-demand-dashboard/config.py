@@ -37,4 +37,4 @@ class Config:
     # Optional AI summaries (Gemini)
     GEMINI_API_KEY = _env("GEMINI_API_KEY", "")
     # Use a "latest" alias by default; the exact set of supported models can vary by account/region.
-    GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-1.5-flash-latest")
+    GEMINI_MODEL = _env("GEMINI_MODEL", "gemini-2.5-flash")

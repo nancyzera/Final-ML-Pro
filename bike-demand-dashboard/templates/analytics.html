@@ -16,10 +16,25 @@
       </div>
     </div>
 
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="h6 mb-2">Key takeaways</div>
+          <div class="text-muted small mb-3">Short interpretations generated from the selected dataset so each graph has context before you dive into the details.</div>
+          <div id="analyticsInsightCards" class="row g-3">
+            <div class="text-muted small">Select a dataset to generate analytical takeaways.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="col-12 col-lg-8">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Line: Bike demand over time</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Line: Bike demand over time</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartLineDemand">Full screen</button>
+          </div>
           <canvas id="chartLineDemand"></canvas>
         </div>
       </div>
@@ -27,7 +42,10 @@
     <div class="col-12 col-lg-4">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Pie: Category share</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Pie: Category share</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartPieShare">Full screen</button>
+          </div>
           <canvas id="chartPieShare"></canvas>
         </div>
       </div>
@@ -36,7 +54,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Demand by category</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Demand by category</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartBarCategory">Full screen</button>
+          </div>
           <canvas id="chartBarCategory"></canvas>
         </div>
       </div>
@@ -44,7 +65,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Scatter: Temperature vs demand</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Scatter: Temperature vs demand</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartScatterTemp">Full screen</button>
+          </div>
           <canvas id="chartScatterTemp"></canvas>
         </div>
       </div>
@@ -53,7 +77,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Histogram: Demand distribution</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Histogram: Demand distribution</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartHistDemand">Full screen</button>
+          </div>
           <canvas id="chartHistDemand"></canvas>
         </div>
       </div>
@@ -61,7 +88,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Box plot: Outlier detection</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Box plot: Outlier detection</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartBoxDemand">Full screen</button>
+          </div>
           <canvas id="chartBoxDemand"></canvas>
         </div>
       </div>
@@ -70,7 +100,10 @@
     <div class="col-12 col-lg-7">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Heatmap: Feature correlation</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Heatmap: Feature correlation</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartHeatmap">Full screen</button>
+          </div>
           <canvas id="chartHeatmap"></canvas>
         </div>
       </div>
@@ -78,7 +111,10 @@
     <div class="col-12 col-lg-5">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Area: Cumulative demand trend</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Area: Cumulative demand trend</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartAreaCum">Full screen</button>
+          </div>
           <canvas id="chartAreaCum"></canvas>
         </div>
       </div>
@@ -87,7 +123,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Avg demand by hour</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Avg demand by hour</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartDemandHour">Full screen</button>
+          </div>
           <canvas id="chartDemandHour"></canvas>
         </div>
       </div>
@@ -95,7 +134,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Avg demand by weekday</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Avg demand by weekday</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartDemandWeekday">Full screen</button>
+          </div>
           <canvas id="chartDemandWeekday"></canvas>
         </div>
       </div>
@@ -104,7 +146,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Scatter: Humidity vs demand</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Scatter: Humidity vs demand</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartScatterHumidity">Full screen</button>
+          </div>
           <canvas id="chartScatterHumidity"></canvas>
         </div>
       </div>
@@ -112,7 +157,10 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Demand by workingday</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Demand by workingday</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartWorkingday">Full screen</button>
+          </div>
           <canvas id="chartWorkingday"></canvas>
         </div>
       </div>
@@ -121,15 +169,57 @@
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Avg demand by month</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Radar: Hourly demand profile</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartRadarHour">Full screen</button>
+          </div>
+          <canvas id="chartRadarHour"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Polar area: Weekday demand mix</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartPolarWeekday">Full screen</button>
+          </div>
+          <canvas id="chartPolarWeekday"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Avg demand by month</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartDemandMonth">Full screen</button>
+          </div>
           <canvas id="chartDemandMonth"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card card-soft">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bubble: Temperature, humidity, and demand</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartBubbleWeather">Full screen</button>
+          </div>
+          <canvas id="chartBubbleWeather"></canvas>
         </div>
       </div>
     </div>
     <div class="col-12 col-lg-6">
       <div class="card card-soft">
         <div class="card-body">
-          <div class="h6 mb-2">Bar: Missing values (top columns)</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="h6 mb-0">Bar: Missing values (top columns)</div>
+            <button class="btn btn-sm btn-outline-secondary" data-chart-target="chartMissing">Full screen</button>
+          </div>
           <canvas id="chartMissing"></canvas>
         </div>
       </div>
@@ -141,6 +231,22 @@
           <div class="h6 mb-2">More graphs (auto-generated)</div>
           <div class="text-muted small mb-3">These graphs are generated from your dataset’s numeric features to exceed 20 charts and help explain demand drivers.</div>
           <div id="moreCharts" class="row g-3"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="analyticsFullscreenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="analyticsFullscreenTitle">Chart</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div style="position:relative; min-height: 70vh;">
+            <canvas id="analyticsFullscreenCanvas"></canvas>
+          </div>
         </div>
       </div>
     </div>
