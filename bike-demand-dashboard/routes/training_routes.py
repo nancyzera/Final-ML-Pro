@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, request
+from sqlalchemy.exc import OperationalError
 
 from models.database import db
 from models.dataset_model import UploadedDataset
@@ -66,6 +67,7 @@ def train():
     if not target_column:
         return jsonify({"success": False, "message": "target_column is required."}), 400
 
+    model_path = None
     try:
         model_task = task if task in {"regression", "classification"} else get_model_task(model_name)
         df = read_dataset(dataset.filepath)
@@ -99,7 +101,7 @@ def train():
             trained_at=datetime.utcnow(),
         )
         db.session.add(trained)
-        db.session.commit()
+        db.session.flush()
 
         model_path = os.path.join(current_app.config["SAVED_MODELS_FOLDER"], f"model_{trained.id}.joblib")
         save_pipeline(pipeline, model_path)
@@ -124,10 +126,7 @@ def train():
 
         trained.model_path = model_path
         trained.meta_json = json_dumps(meta)
-        db.session.commit()
-
         dataset.target_column = target_column
-        db.session.commit()
 
         state = AppState.query.get(1) or AppState(id=1)
         state.active_dataset_id = dataset.id
@@ -143,8 +142,43 @@ def train():
             }
         )
     except ValueError as e:
+        db.session.rollback()
+        if model_path and os.path.exists(model_path):
+            try:
+                os.remove(model_path)
+            except OSError:
+                pass
         return jsonify({"success": False, "message": str(e)}), 400
+    except OperationalError as e:
+        db.session.rollback()
+        if model_path and os.path.exists(model_path):
+            try:
+                os.remove(model_path)
+            except OSError:
+                pass
+        msg = str(getattr(e, "orig", e))
+        if "database or disk is full" in msg.lower():
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            "Training could not be saved because the app storage is full. "
+                            f"Check free space for SQLite at '{current_app.config['DB_PATH']}' "
+                            f"and model storage at '{current_app.config['SAVED_MODELS_FOLDER']}'."
+                        ),
+                    }
+                ),
+                507,
+            )
+        return jsonify({"success": False, "message": str(e)}), 500
     except Exception as e:
+        db.session.rollback()
+        if model_path and os.path.exists(model_path):
+            try:
+                os.remove(model_path)
+            except OSError:
+                pass
         return jsonify({"success": False, "message": str(e)}), 500
 
 

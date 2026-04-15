@@ -32,7 +32,13 @@ def create_app():
     # Cache-busting for static assets during local development
     app.config["APP_VERSION"] = os.getenv("APP_VERSION") or str(int(time.time()))
 
-    # Ensure folders exist
+    # Ensure persistent storage paths exist before initializing extensions.
+    db_path = app.config.get("DB_PATH")
+    if db_path:
+        db_dir = os.path.dirname(db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     os.makedirs(app.config["SAVED_MODELS_FOLDER"], exist_ok=True)
     os.makedirs(app.config["EXPORTS_FOLDER"], exist_ok=True)
